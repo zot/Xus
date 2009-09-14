@@ -1,14 +1,14 @@
-package xus
+package xus.comm
 
 import java.net._
 import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.channels._
+import scala.actors.TIMEOUT
 import scala.actors.Actor._
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.ArrayStack
-import scala.collection.mutable.ByteArrayVector
 import scala.collection.JavaConversions._
 import scala.collection.mutable.{Map => MMap}
 
@@ -16,27 +16,34 @@ object Connection {
 	val buffers = new ArrayStack[ByteBuffer]
 	val BUFFER_SIZE = 1024 * 1024
 	val selector = Selector.open
-	val connections = MMap[SelectableChannel, Connection[_]]()
-	var waitTime = 1000
-	val selectorThread = new Thread("Selector Thread") {
-		override def run {
-			try {
-				while (true) {
-					if (selector.select(waitTime) > 0) {
-						for (key <- selector.selectedKeys) key match {
-							case _ => connections(key.channel).handle(key)
-						}
-					}
+	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
+	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
+	val selectorThread = actor {
+		loop {
+			receiveWithin(1) {
+			case con: Connection[_] =>
+				con.register 
+				connections(con.chan) = con
+			case TIMEOUT =>
+			case other =>
+			}
+			val count = selector.select(100)
+			val keys = selector.selectedKeys.iterator
+			
+			while (keys.hasNext) {
+				val k = keys.next
+				
+				keys.remove
+				if (k.isValid) {
+					connections(k.channel).handle(k)
 				}
-			} catch {
-			case e => e.printStackTrace
 			}
 		}
 	}
-	
-	def start {
-		selectorThread.setDaemon(true)
-		selectorThread.start
+
+	def queue(obj: Any) {
+		selectorThread ! obj
+		selector.wakeup
 	}
 	def get = {
 		buffers synchronized {
@@ -55,29 +62,36 @@ object Connection {
 			}
 		}
 	}
+	def addConnection[T](newCon: T) = {
+		queue(newCon)
+		newCon
+	}
 }
-object ClientConnection extends Connection {
-	def apply(connection: SocketChannel, optAcceptor: Option[Acceptor])(inputHandler: (Array[Byte], Int, Int) => Unit) = new ClientConnection(connection, optAcceptor) {
+object ClientConnection {
+	import Connection._
+
+	def apply(connection: SocketChannel, optAcceptor: Option[Acceptor])(inputHandler: (Array[Byte], Int, Int) => Unit): ClientConnection = new ClientConnection(connection, optAcceptor) {
 		def handleInput(bytes: Array[Byte], offset: Int, length: Int) = inputHandler(bytes, offset, length)
 	}
-	def apply(host: String, port: Int)(inputHandler: (Array[Byte], Int, Int) => Unit) = {
+	def apply(host: String, port: Int)(inputHandler: (Array[Byte], Int, Int) => Unit): ClientConnection = {
 		val chan = SocketChannel.open
 
 		chan.configureBlocking(false)
-		chan.register(selector, SelectionKey.OP_READ | SelectionKey.OP_READ | SelectionKey.OP_CONNECT)
+		val con = addConnection(ClientConnection(chan, None)(inputHandler))
 		chan.connect(new InetSocketAddress(host, port))
-		new ClientConnection(chan)(inputHandler)
+		con
 	}
 }
 
 abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
-	def close
+	def register
 
-	def handle(key: SelectionKey) = key match {
-	case _ if !key.isValid => close
+	def close {
+		chan.keyFor(Connection.selector).cancel
 	}
+	def handle(key: SelectionKey) = ()
 }
-abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) {
+abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) {
 	def handleInput(bytes: Array[Byte], offset: Int, length: Int): Unit
 
 	import Connection._
@@ -94,10 +108,10 @@ abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Opti
 	val outputActor = actor {
 		loop {
 			react {
-			case 0 => doClose
 			case _ if !chan.isOpen => doClose
+			case 0 => doClose
 			case 1 => writeOutput
-			case (newOutput: Array[Byte], size: Int) => doAddOutput(newOutput, size)
+			case (newOutput: Array[Byte], offset: Int, len: Int) => doAddOutput(newOutput, offset, len)
 			}
 		}
 	}
@@ -111,8 +125,13 @@ abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Opti
 		}
 	}
 
-	def addOutput(newOutput: Array[Byte]) = outputActor ! newOutput
-	def doAddOutput(newOutput: Array[Byte], size: Int) {
+	def register {
+		chan.configureBlocking(false)
+		chan.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE | (if (optAcceptor == None) SelectionKey.OP_CONNECT else 0))
+	}
+	def addOutput(newOutput: Array[Byte]) {addOutput(newOutput, 0, newOutput.length)}
+	def addOutput(newOutput: Array[Byte], offset: Int, len: Int) {outputActor ! (newOutput, offset, len)}
+	def doAddOutput(newOutput: Array[Byte], offset: Int, len: Int) {
 		if (output.isEmpty) {
 			output.append(get)
 		} else {
@@ -122,13 +141,15 @@ abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Opti
 				output.append(get)
 			}
 		}
-		putLen(size)
-		((output.last.remaining until size by BUFFER_SIZE) ++ List(newOutput.size)).foldLeft(0) {(s1, s2) =>
+		putLen(len)
+		((offset + output.last.remaining until offset + len by BUFFER_SIZE) ++ List(newOutput.size)).foldLeft(offset) {(s1, s2) =>
 			output.last.put(newOutput, s1, s2 - s1)
 			output.last.flip
 			output.append(get)
 			s2
 		}
+		output.last.flip
+		writeOutput
 	}
 	def writeOutput {
 		if (chan.write(output.toArray, 0, output.size) > 0) {
@@ -139,13 +160,14 @@ abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Opti
 	}
 	def readInput {
 		if (chan.read(input) > 0) {
-			partialInput.write(input.array, 0, input.remaining)
+			partialInput.write(input.array, 0, input.position)
 			input.clear
 			processInput
 		}
 	}
-	def close {
+	override def close {
 		outputActor ! 0
+		super.close
 	}
 	def doClose {
 		inputActor ! 0
@@ -186,10 +208,10 @@ abstract class ClientConnection(val clientChan: SocketChannel, optAcceptor: Opti
 
 		(bytes(3) << 24) | (bytes(2) << 16) | (bytes(1) << 8) | bytes(0)
 	}
-	override def handle(key: SelectionKey) = key match {
-	case _ if key.isReadable => inputActor ! 1
-	case _ if key.isWritable => outputActor ! 1
-	case _ if key.isConnectable => chan.finishConnect()
-	case _ => super.handle(key)
+	override def handle(key: SelectionKey) = {
+		if (key.isReadable) inputActor ! 1
+		if (key.isWritable) outputActor ! 1
+		if (key.isConnectable) chan.finishConnect()
+		super.handle(key)
 	}
 }
