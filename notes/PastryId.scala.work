@@ -1,0 +1,946 @@
+/*******************************************************************************
+
+"FreePastry" Peer-to-Peer Application Development Substrate
+
+Copyright 2002-2007, Rice University. Copyright 2006-2007, Max Planck Institute 
+for Software Systems.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+- Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+- Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+- Neither the name of Rice  University (RICE), Max Planck Institute for Software 
+Systems (MPI-SWS) nor the names of its contributors may be used to endorse or 
+promote products derived from this software without specific prior written 
+permission.
+
+This software is provided by RICE, MPI-SWS and the contributors on an "as is" 
+basis, without any representations or warranties of any kind, express or implied 
+including, but not limited to, representations or warranties of 
+non-infringement, merchantability or fitness for a particular purpose. In no 
+event shall RICE, MPI-SWS or contributors be liable for any direct, indirect, 
+incidental, special, exemplary, or consequential damages (including, but not 
+limited to, procurement of substitute goods or services; loss of use, data, or 
+profits; or business interruption) however caused and on any theory of 
+liability, whether in contract, strict liability, or tort (including negligence
+or otherwise) arising in any way out of the use of this software, even if 
+advised of the possibility of such damage.
+
+*******************************************************************************/ 
+
+/**
+ * Ported to Scala as part of the Xus project and stripped of Pastry depencencies
+ */
+
+package xus.comm;
+
+import java.io._
+import java.lang.ref._
+import java.util._
+
+/**
+ * Represents a Pastry identifier for a node, object or key. A single identifier and the bit length
+ * for Ids is stored in this class. Ids are stored little endian.  NOTE: Ids are immutable, and are
+ * coalesced for memory efficiency.  New Ids are to be constructed from the build() methods, which
+ * ensure that only one copy of each Id is in memory at a time.
+ *
+ * @version $Id: Id.java 3613 2007-02-15 14:45:14Z jstewart $
+ * @author Andrew Ladd
+ * @author Peter Druschel
+ * @author Alan Mislove
+ */
+object Id {
+	val TYPE: Short = 1
+
+	/**
+	 * The static translation array
+	 */
+	val tran = Array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F")
+
+	/**
+	 * This is the bit length of the node ids. If it is n, then there are 2^n possible different Ids.
+	 * We currently assume that it is divisible by 32.
+	 */
+	val IdBitLength = 160
+	val nlen = IdBitLength / 32
+
+	/**
+	 * serialver for backwards compatibility
+	 */
+	val serialVersionUID = 2166868464271508935L
+
+	/**
+	 * Distance constants
+	 */
+	val Null = Array(0, 0, 0, 0, 0)
+	val One = Array(1, 0, 0, 0, 0)
+	val NegOne = Array(-1, -1, -1, -1, -1)
+	val Half = Array(0, 0, 0, 0, 0x80000000)
+	
+	/**
+	 * return the number of digits in a given base
+	 *
+	 * @param base the number of bits in the base
+	 * @return the number of digits in that base
+	 */
+	def numDigits(base: Int) = IdBitLength / base
+
+	/**
+	 * Creates a random Id. For testing purposed only -- should NOT be used to generate real node or
+	 * object identifiers (low quality of random material).
+	 *
+	 * @param rng random number generator
+	 * @return a random Id
+	 */
+	def makeRandomId(rng: Random) = {
+		val material = new Array[byte](IdBitLength / 8)
+
+		rng.nextBytes(material)
+		build(material)
+	}
+
+	/**
+	 * Constructor.
+	 *
+	 * @param material an array of length at least IdBitLength/32 containing raw Id material.
+	 */
+	def build(material: Array[Byte]) = {
+		val bits = new Array[Int](nlen)
+		for (i <- 0 until Math.min(nlen, material.length)) {
+			bits(i) = material(i);
+		}
+		new Id(bits)
+	}
+}
+
+class Id(material: Array[Int]) {
+
+	import Id._
+
+	/**
+	 * Equality operator for Ids.
+	 *
+	 * @param obj a Id object
+	 * @return true if they are equal, false otherwise.
+	 */
+	override def equals(obj: Object) = obj.isInstanceOf[Id] && equals(obj.asInstanceOf[Id])
+
+	/**
+	 * Equivalence relation for Ids.
+	 *
+	 * @param nid the other node id.
+	 * @return true if they are equal, false otherwise.
+	 */
+	def equals(nid: Id): Boolean = {
+		if (nid == null) {
+			return false;
+		}
+		for (i <- 0 until nlen) {
+			if (bits(i) != nid.bits(i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Comparison operator for Ids. The comparison that occurs is a numerical comparison.
+	 *
+	 * @param obj the Id to compare with.
+	 * @return negative if this < obj, 0 if they are equal and positive if this > obj.
+	 */
+	def compareTo(oth: Id): Int = {
+		for (i <- nlen - 1 to 0 by -1) {
+			if (bits(i) != oth.bits(i)) {
+				val t = bits(i) & 0x0ffffffffL
+				val o = oth.bits(i) & 0x0ffffffffL
+				if (t < o) {
+					return -1;
+				} else {
+					return 1;
+				}
+			}
+		}
+		return 0;
+	}
+	/**
+	 * Hash codes for Ids.
+	 *
+	 * @return a hash code.
+	 */
+	def hashCode() = {
+		var h = 0;
+
+		/// Hash function is computed by XORing the bits of the Id.
+		for (i <- 0 until nlen) {
+			h ^= bits(i)
+		}
+		h
+	}
+
+	/*******
+	 *******
+	 ******* START OF CONVERTED CODE
+	 ******* FROM HERE TO "END OF CONVERTED CODE"
+	 ******* HAS BEEN CONVERTED TO SCALA
+	 *******
+	 *******/
+
+// ----- NORMAL ID METHODS -----
+
+	/**
+	 * gets the Id just clockwise from this
+	 *
+	 * @return The CW value
+	 */
+	def getCW() = add(new Distance(One))
+
+	/**
+	 * gets the Id just counterclockwise from this
+	 *
+	 * @return The CCW value
+	 */
+	def getCCW() = add(new Distance(NegOne))
+
+	/**
+	 * Checks if this Id is between two given ids ccw (inclusive) and cw (exclusive) on the circle
+	 *
+	 * @param ccw the counterclockwise id
+	 * @param cw the clockwise id
+	 * @return true if this is between ccw (inclusive) and cw (exclusive), false otherwise
+	 */
+	def isBetween(ccw: Id, cw: Id) = !ccw.equals(cw) && 
+		(if (ccw.clockwise(cw)) {
+			clockwise(cw) && !clockwise(ccw);
+		} else {
+			!clockwise(ccw) || clockwise(cw);
+		})
+
+	/**
+	 * Gets the ith digit in base 2^b. i = 0 is the least significant digit.
+	 *
+	 * @param i which digit to get.
+	 * @param b which power of 2 is the base to get it in.
+	 * @return the ith digit in base 2^b.
+	 */
+	def getDigit(i: Int, b: Int) = {
+		val bitIndex = b * i + (IdBitLength % b)
+		val index = bitIndex / 32
+		val shift = bitIndex % 32
+		var value: Long = bits(index)
+
+		if (shift + b > 32) {
+			value = (value & 0xffffffffL) | ((bits(index + 1).asInstanceOf[Long]) << 32)
+		}
+		((value >> shift).asInstanceOf[Int]) & ((1 << b) - 1)
+	}
+	/**
+	 * produces a Id whose prefix up to row is identical to this, followed by a digit with value
+	 * column, followed by a suffix of digits with value suffixDigits.
+	 *
+	 * @param row the length of the prefix
+	 * @param column the value of the following digit
+	 * @param suffixDigit the value of the suffix digits
+	 * @param b power of 2 of the base
+	 * @return the resulting Id
+	 */
+	def getDomainPrefix(row: Int, column: Int, suffixDigit: Int, b: Int) = {
+		val res = new Id(bits)
+
+		res.setDigit(row, column, b);
+		for (i <- 0 until row) {
+			res.setDigit(i, suffixDigit, b);
+		}
+		new Id(res.bits);
+	}
+	/**
+	 * produces a set of ids (keys) that are evenly distributed around the id ring. One invocation
+	 * produces the i-th member of a set of size num. The set is evenly distributed around the ring,
+	 * with an offset given by this Id. The set is useful for constructing, for instance, Scribe trees
+	 * with disjoint sets of interior nodes.
+	 *
+	 * @param num the number of Ids in the set (must be <= 2^b)
+	 * @param b the routing base (as a power of 2)
+	 * @param i the index of the requested member of the set (0<=i<num; the 0-th member is this)
+	 * @return the resulting set member, or null in case of illegal arguments
+	 */
+	def getAlternateId(num: Int, b: Int, i: Int): Id = {
+		if (num > (1 << b) || i < 0 || i >= num) {
+			return null;
+		}
+		val res = new Id(bits);
+		val digit = res.getDigit(numDigits(b) - 1, b) + ((1 << b) / num) * i;
+		res.setDigit(numDigits(b) - 1, digit, b);
+		new Id(res.bits);
+	}
+
+	// ----- COMMON API SUPPORT -----
+	/**
+	 * Sets the ith bit to a given value i = 0 is the least significant bit.
+	 *
+	 * @param i which bit to set.
+	 * @param v new value of bit
+	 */
+//  private void setBit(int i, int v) {
+//	    int index = i / 32;
+//	    int shift = i % 32;
+//	    int val = Id[index];
+//	    int mask = (1 << shift);
+//
+//	    if (v == 1) {
+//	      Id[index] = val | mask;
+//	    } else {
+//	      Id[index] = val & ~mask;
+//	    }
+//  }
+
+
+	/**
+	 * Sets the ith digit in base 2^b. i = 0 is the least significant digit.
+	 *
+	 * @param i which digit to get.
+	 * @param v the new value of the digit
+	 * @param b which power of 2 is the base to get it in.
+	 */
+	def setDigit(i: Int, v: Int, b: Int) {
+		val bitIndex = b * i + (IdBitLength % b)
+		val index = bitIndex / 32
+		val shift = bitIndex % 32
+		val mask = (1 << b) - 1
+
+		if (shift + b > 32) {
+			// digit overlaps a word boundary
+			val newd = (v & mask).asInstanceOf[Long] << shift
+			val vmask = ~((mask.asInstanceOf[Long]) << shift)
+			var value: Long = bits(index)
+
+			value = (value & 0xffffffffL) | ((bits(index + 1).asInstanceOf[Long]) << 32);
+			value = (value & vmask) | newd;
+			bits(index) = value.asInstanceOf[Int]
+			bits(index + 1) = (value >> 32).asInstanceOf[Int]
+		} else {
+			val newd = (v & mask) << shift;
+			val vmask = ~(mask << shift);
+			bits(index) = (bits(index) & vmask) | newd;
+		}
+	}
+	/**
+	 * Blits the Id into a target array.
+	 *
+	 * @param target an array of length at least IdBitLength/8 for the Id to be stored in.
+	 */
+	def blit(target: Array[Byte]): Unit = blit(target, 0)
+	  
+	/**
+	 * Blits the distance into a target array, starting at the given offset.
+	 *
+	 * @param offset The offset to start at
+	 * @param target an array of length at least IdBitLength/8 for the distance to be stored in.
+	 */
+	def blit(target: Array[Byte], offset: Int) {
+		for (j <- 0 until IdBitLength / 8) {
+			val k = bits(j / 4) >> ((j % 4) * 8)
+
+			target(offset+j) = (k & 0xff).asInstanceOf[Byte];
+		}
+	}
+
+	/**
+	 * Copy the Id into a freshly generated array.
+	 *
+	 * @return a fresh copy of the Id material
+	 */
+	def copy() = {
+		val target = new Array[Byte](IdBitLength / 8);
+
+		blit(target);
+		target;
+	}
+
+	/**
+	 * Returns the byte array representation of this Id
+	 *
+	 * @return The byte array representation of this id
+	 */
+	def toByteArray = copy
+
+	/**
+	 * Stores the byte[] value of this Id in the provided byte array
+	 *
+	 * @return A byte[] representing this Id
+	 */
+	def toByteArray(array: Array[Byte], offset: Int) = blit(array, offset)
+	  
+	/**
+	 * Returns the length of the byte[] representing this Id
+	 *
+	 * @return The length of the byte[] representing this Id
+	 */
+	def getByteArrayLength() = (IdBitLength / 8).asInstanceOf[Int]
+	  
+
+	/**
+	 * Returns an Id corresponding to this Id plus a given distance
+	 *
+	 * @param offset the distance to add
+	 * @return the new Id
+	 */
+	def add(offset: Distance) = {
+		val array = new Array[Int](nlen)
+		var carry: Int = 0
+
+		for (i <- 0 until nlen) {
+			val x = bits(i) & 0x0ffffffffL
+			val y = offset.difference(i) & 0x0ffffffffL;
+			val sum = x + y + carry;
+
+			carry = if (sum >= 0x100000000L) 1 else 0
+			array(i) = sum.asInstanceOf[Int]
+		}
+		new Id(array);
+	}
+
+	/**
+	 * Returns the shorter numerical distance on the ring between a pair of Ids.
+	 *
+	 * @param nid the other node id.
+	 * @return the distance between this and nid.
+	 */
+//	def distance(nid: Id) = {
+//		val dist = absDistance(nid)
+//		
+//		if ((dist(nlen - 1) & 0x80000000) != 0) {
+//			invert(dist)
+//		}
+//		new Distance(dist)
+//	}
+	
+	// I think this next one is equivalent to the above
+	def distance(nid: Id) = distance(nid, new Distance())
+	def distance(nid: Id, d: Distance) = {
+		val dist = d.difference
+
+		absDistance(nid, dist)
+		if ((dist(nlen - 1) & 0x80000000) != 0) {
+			invert(dist);
+		}
+		return d;
+	}
+
+	/**
+	 * Returns the longer numerical distance on the ring between a pair of Ids.
+	 *
+	 * @param nid the other node id.
+	 * @return the distance between this and nid.
+	 */
+	def longDistance(nid: Id) = {
+		val dist = absDistance(nid);
+
+		if ((dist(nlen - 1) & 0x80000000) == 0) {
+			invert(dist)
+		}
+		new Distance(dist)
+	}
+
+
+	/**
+	 * Xor operator for Ids. Sets this Id to the bit-wise XOR of itself and otherId
+	 *
+	 * @param otherId a Id object
+	 */
+//  public void xor(Id otherId) {
+//	    for (int i = 0; i < nlen; i++) {
+//	      Id[i] ^= otherId.Id[i];
+//	    }
+//  }
+	
+	
+	/*******
+	/*******
+	/******* END OF CONVERTED CODE
+	/*******
+	/*******
+
+  /**
+   * Checks to see if the Id nid is clockwise or counterclockwise from this, on the ring. An Id is
+   * clockwise if it is within the half circle clockwise from this on the ring. An Id is considered
+   * counter-clockwise from itself.
+   *
+   * @param nid The Id we are comparing to
+   * @return true if clockwise, false otherwise.
+   */
+  public boolean clockwise(Id nid) {
+    boolean diffMSB = ((Id[nlen - 1] & 0x80000000) != (nid.Id[nlen - 1] & 0x80000000));
+    int x;
+    int y;
+    int i;
+
+    if ((x = (Id[nlen - 1] & 0x7fffffff)) != (y = (nid.Id[nlen - 1] & 0x7fffffff))) {
+      return ((y > x) ^ diffMSB);
+    } else {
+      for (i = nlen - 2; i >= 0; i--) {
+        if (Id[i] != nid.Id[i]) {
+          break;
+        }
+      }
+
+      if (i < 0) {
+        return diffMSB;
+      } else {
+        long xl;
+        long yl;
+
+        xl = Id[i] & 0xffffffffL;
+        yl = nid.Id[i] & 0xffffffffL;
+
+        return ((yl > xl) ^ diffMSB);
+      }
+    }
+  }
+
+  /**
+   * Checks if the ith bit is flipped. i = 0 is the least significant bit.
+   *
+   * @param i which bit to check.
+   * @return true if the bit is set, false otherwise.
+   */
+  public boolean checkBit(int i) {
+    int index = i / 32;
+    int shift = i % 32;
+    int val = Id[index];
+    int mask = (1 << shift);
+
+    if ((val & mask) != 0) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * Returns the index of the most significant differing bit (MSDB).
+   *
+   * @param nid another node id to compare with.
+   * @return the index of the msdb (0 is the least significant) / will return negative if they do
+   *      not differ.
+   */
+  public int indexOfMSDB(Id nid) {
+    for (int i = nlen - 1; i >= 0; i--) {
+      int cmp = Id[i] ^ nid.Id[i];
+
+      if (cmp != 0) {
+        int tmp;
+        int j = 0;
+        if ((tmp = cmp & 0xffff0000) != 0) {
+          cmp = tmp;
+          j += 16;
+        }
+        if ((tmp = cmp & 0xff00ff00) != 0) {
+          cmp = tmp;
+          j += 8;
+        }
+        if ((tmp = cmp & 0xf0f0f0f0) != 0) {
+          cmp = tmp;
+          j += 4;
+        }
+        if ((tmp = cmp & 0xcccccccc) != 0) {
+          cmp = tmp;
+          j += 2;
+        }
+        if ((tmp = cmp & 0xaaaaaaaa) != 0) {
+          cmp = tmp;
+          j += 1;
+        }
+        return 32 * i + j;
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * Returns the index of the most significant different digit (MSDD) in a given base.
+   *
+   * @param nid another node id to compare with.
+   * @param base the base (as a power of two) to compare in.
+   * @return the index of the msdd (0 is the least significant) / will return negative if they do
+   *      not differ.
+   */
+  public int indexOfMSDD(Id nid, int base) {
+    int ind = indexOfMSDB(nid);
+
+    // ignore trailing LSBs if (IdBitLength % base) > 0
+    ind -= IdBitLength % base;
+
+    if (ind < 0) {
+      return ind;
+    }
+    return ind / base;
+  }
+
+
+  /**
+   * Returns a string representation of the Id in base 16. The string is a byte string from most to
+   * least significant.
+   * 
+   * This was updated by Jeff because it was becomming a performance bottleneck.
+   *
+   * @return A String representation of this Id, abbreviated
+   */
+  public String toString() {
+    StringBuffer buffer = new StringBuffer();
+    buffer.append("<0x");
+    
+    int n = IdBitLength / 4;
+    for (int i = n-1; i >= n-6; i--) 
+      buffer.append(tran[getDigit(i, 4)]);
+    
+    buffer.append("..>");
+    
+    return buffer.toString();
+  }
+
+  /**
+   * Similar to toString(), but not wrapped by <0x ..>
+   * @return
+   */
+  public String toStringBare() {
+    StringBuffer buffer = new StringBuffer();
+    
+    int n = IdBitLength / 4;
+    for (int i = n-1; i >= n-6; i--) 
+      buffer.append(tran[getDigit(i, 4)]);
+    
+    
+    return buffer.toString();    
+  }
+  
+  /**
+   * Returns the complete represntation of this Id, in hex.
+   *
+   * @return The complete representation of this Id, in hexadecimal
+   */
+  public String toStringFull() {
+    StringBuffer buffer = new StringBuffer();
+
+    int n = IdBitLength / 4;
+    for (int i = n - 1; i >= 0; i--) 
+      buffer.append(tran[getDigit(i, 4)]);
+    
+    return buffer.toString();
+  }
+
+  /**
+   * Checks to see if the Id nid is clockwise or counterclockwise from this, on the ring. An Id is
+   * clockwise if it is within the half circle clockwise from this on the ring. An Id is considered
+   * counter-clockwise from itself.
+   *
+   * @param nid DESCRIBE THE PARAMETER
+   * @return true if clockwise, false otherwise.
+   */
+  public boolean clockwise(rice.p2p.commonapi.Id nid) {
+    return clockwise((Id) nid);
+  }
+
+  /**
+   * Returns an Id corresponding to this Id plus a given distance
+   *
+   * @param offset the distance to add
+   * @return the new Id
+   */
+  public rice.p2p.commonapi.Id addToId(rice.p2p.commonapi.Id.Distance offset) {
+    return add((Id.Distance) offset);
+  }
+
+  /**
+   * Returns the shorter numerical distance on the ring between a pair of Ids.
+   *
+   * @param nid the other node id.
+   * @return the distance between this and nid.
+   */
+  public rice.p2p.commonapi.Id.Distance distanceFromId(rice.p2p.commonapi.Id nid) {
+    return distance((Id) nid);
+  }
+
+  /**
+   * Returns the longer numerical distance on the ring between a pair of Ids.
+   *
+   * @param nid the other node id.
+   * @return the distance between this and nid.
+   */
+  public rice.p2p.commonapi.Id.Distance longDistanceFromId(rice.p2p.commonapi.Id nid) {
+    return longDistance((Id) nid);
+  }
+
+  /**
+   * Returns the absolute numerical distance between a pair of Ids.
+   *
+   * @param nid the other node id.
+   * @return an int[] containing the distance between this and nid.
+   */
+  private int[] absDistance(Id nid) {
+    return absDistance(nid,new int[nlen]);
+  }
+  private int[] absDistance(Id nid, int dist[]) {
+    long x;
+    long y;
+    long diff;
+    int carry = 0;
+
+    if (compareTo(nid) > 0) {
+      for (int i = 0; i < nlen; i++) {
+        x = Id[i] & 0x0ffffffffL;
+        y = nid.Id[i] & 0x0ffffffffL;
+
+        diff = x - y - carry;
+
+        if (diff < 0) {
+          carry = 1;
+        } else {
+          carry = 0;
+        }
+
+        dist[i] = (int) diff;
+      }
+    } else {
+      for (int i = 0; i < nlen; i++) {
+        x = Id[i] & 0x0ffffffffL;
+        y = nid.Id[i] & 0x0ffffffffL;
+
+        diff = y - x - carry;
+
+        if (diff < 0) {
+          carry = 1;
+        } else {
+          carry = 0;
+        }
+
+        dist[i] = (int) diff;
+      }
+    }
+    return dist;
+  }
+
+  /**
+   * inverts the distance value stored in an integer array (computes 0-value)
+   *
+   * @param dist the distance value
+   */
+  private void invert(int[] dist) {
+    int carry = 0;
+    long diff;
+    for (int i = 0; i < nlen; i++) {
+      diff = dist[i] & 0x0ffffffffL;
+      diff = 0L - diff - carry;
+      if (diff < 0) {
+        carry = 1;
+      }
+      dist[i] = (int) diff;
+    }
+  }
+
+  public short getType() {
+    return TYPE;
+  }
+}
+
+/**
+ * A class for representing and manipulating the distance between two Ids on the circle.
+ *
+ * @version $Id: Id.java 3613 2007-02-15 14:45:14Z jstewart $
+ * @author amislove
+ */
+class Distance(val difference: Array[Int]) extends Comparable[Distance] {
+	import Id._
+
+	/**
+	 * Blits the distance into a target array.
+	 *
+	 * @param target an array of length at least IdBitLength/8 for the distance to be stored in.
+	 */
+	def blit(target: Array[Byte]) {
+		blit(target, 0);
+	}
+  
+	/**
+	 * Blits the distance into a target array, starting at the given offset.
+	 *
+	 * @param offset The offset to start at
+	 * @param target an array of length at least IdBitLength/8 for the distance to be stored in.
+	 */
+	def blit(target: Array[Byte], offset: int) {
+		for (j <- 0 until IdBitLength / 8) {
+			val k = difference(j / 4) >> ((j % 4) * 8);
+
+			target(offset+j) = (k & 0xff).asInstanceOf[Byte];
+		}
+	}
+
+	/**
+	 * Copy the distance into a freshly generated array.
+	 *
+	 * @return a fresh copy of the distance material
+	 */
+	def copy() = {
+		val target: Array[Byte] = new Array[Byte](IdBitLength / 8);
+
+		blit(target);
+		target;
+	}
+
+	/**
+	 * Comparison operator. The comparison that occurs is an absolute magnitude comparison.
+	 *
+	 * @param obj the Distance to compare with.
+	 * @return negative if this < obj, 0 if they are equal and positive if this > obj.
+	 */
+	def compareTo(oth: Distance): Int = {
+		for (i <- nlen - 1 to 0 by -1) {
+			if (difference(i) != oth.difference(i)) {
+				val t = difference(i) & 0x0ffffffffL;
+				val o = oth.difference(i) & 0x0ffffffffL;
+
+				if (t < o) {
+					return -1;
+				} else {
+					return 1;
+				}
+			}
+		}
+		0
+	}
+
+	/**
+	 * Equality operator.
+	 *
+	 * @param obj another Distance.
+	 * @return true if they are the same, false otherwise.
+	 */
+	def equals(obj: Object) = obj match {
+	case d: Distance => compareTo(d) == 0
+	case _ => false
+	}
+
+	/**
+	 * Shift operator. shift(-1,0) multiplies value of this by two, shift(1,0) divides by 2
+	 *
+	 * @param cnt the number of bits to shift, negative shifts left, positive shifts right
+	 * @param fill value of bit shifted in (0 if fill == 0, 1 otherwise)
+	 * @return this
+	 */
+	def shift(cnt: Int, fill: Int): Distance = shift(cnt, fill, false);
+
+	/**
+	 * Shift operator. shift(-1,0) multiplies value of this by two, shift(1,0) divides by 2
+	 *
+	 * @param cnt the number of bits to shift, negative shifts left, positive shifts right
+	 * @param fill value of bit shifted in (0 if fill == 0, 1 otherwise)
+	 * @param roundUp if true, round up the results after right shifting
+	 * @return this
+	 */
+	def shift(cnt: Int, fill: Int, roundUp: Boolean) = {
+		var carry: Int = 0
+		var bit: Int = 0
+		var lsb: Int = 0
+
+		if (cnt > 0) {
+			for (j <- 0 until cnt) {
+				// shift right one bit
+				carry = if (fill == 0) 0 else 0x80000000
+				for (i <- nlen - 1 to 0 by -1) {
+					bit = difference(i) & 1
+					difference(i) = (difference(i) >>> 1) | carry
+					carry = if (bit == 0) 0 else 0x80000000
+				}
+				if (j == 0) {
+					lsb = bit
+				}
+			}
+			if (roundUp && lsb > 0) {
+				inc()
+			}
+		} else {
+			for (j <- 0 until -cnt) {
+				// shift left one bit
+				carry = if (fill == 0) 0 else 1
+				for (i <- 0 until nlen) {
+					bit = difference(i) & 0x80000000
+					difference(i) = (difference(i) << 1) | carry
+					carry = if (bit == 0) 0 else 1
+				}
+			}
+		}
+		this
+	}
+
+	/**
+	 * Hash codes.
+	 *
+	 * @return a hash code.
+	 */
+	def hashCode() = {
+		var h = 0
+
+		// Hash function is computed by XORing the bits of the Id.
+		for (i <- 0 until nlen) {
+			h ^= difference(i)
+		}
+		h
+	}
+
+	/**
+	 * Returns a string representation of the distance The string is a byte string from most to
+	 * least significant.
+	 *
+	 * @return The string representation of this distance
+	 */
+	def toString() = {
+		var s: String = "0x"
+		var tran = Array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F")
+
+		for (j <- IdBitLength / 8 - 1 to 0 by -1) {
+			val k = difference(j / 4) >> ((j % 4) * 8)
+			s = s + tran((k >> 4) & 0x0f) + tran(k & 0x0f)
+		}
+		"< Id.distance " + s + " >";
+	}
+
+	// common API Support
+
+	/**
+	 * Shift operator. shift(-1,0) multiplies value of this by two, shift(1,0) divides by 2
+	 *
+	 * @param cnt the number of bits to shift, negative shifts left, positive shifts right
+	 * @param fill value of bit shifted in (0 if fill == 0, 1 otherwise)
+	 * @return this
+	 */
+	def shiftDistance(cnt: Int, fill: Int) = shift(cnt, fill)
+
+	/**
+	 * increment this distance
+	 */
+	def inc() {
+		var x: Long = 0
+		var sum: Long = 0
+		var carry: Int = 1
+
+		// add one
+		for (i <- 0 until nlen) {
+			x = difference(i) & 0x0ffffffffL;
+			sum = x + carry;
+			if (sum >= 0x100000000L) {
+				carry = 1;
+			} else {
+				carry = 0;
+			}
+			difference(i) = sum.asInstanceOf[Int]
+		}
+	}
+}

@@ -4,8 +4,8 @@ import scala.io.Source
 import xus.comm._
 import scala.actors.Actor._
 
-object IM {
-	var con: ClientConnection = null
+object IM extends Peer {
+	var con: SimpyPacketConnectionProtocol = null
 
 	def main(args: Array[String]) {
 		if (args(0) == "server") {
@@ -14,14 +14,14 @@ object IM {
 			client(Integer.parseInt(args(1)))
 		}
 	}
-	def handleInput(bytes: Array[Byte], offset: Int, len: Int) {
-		System.err.println(new String(bytes, offset, len))
-	}
+//	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, len: Int) {
+//		System.err.println(new String(bytes, offset, len))
+//	}
 	def server(port: Int) {
-		Acceptor.listen(port) {(newCon: ClientConnection) =>
-			con = newCon
+		Acceptor.listenCustom(port, this)({newCon: SimpyPacketConnection =>
+			con = addConnection(newCon)
 			actor {processInput}
-		} (handleInput)
+		})
 	}
 	def processInput {
 		while (true) {
@@ -30,7 +30,7 @@ object IM {
 				System.out.flush
 				for (line <- Source.stdin.getLines()) {
 					if (!line.isEmpty) {
-						con.addOutput(line.getBytes)
+						topicCons(con).sendDirect(0, 0, line)
 						System.out.print("> ")
 						System.out.flush
 					}
@@ -39,7 +39,10 @@ object IM {
 		}
 	}
 	def client(port: Int) {
-		con = ClientConnection("localhost", port)(handleInput)
+		con = addConnection(SimpyPacketConnection("localhost", port, this))
 		actor {processInput}
+	}
+	override def receive(msg: Direct) {
+		System.out.println("RECEIVED MESSAGE: " + msg.message)
 	}
 }

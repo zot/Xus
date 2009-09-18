@@ -7,32 +7,37 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable.{Map => MMap}
 
 object Acceptor {
-	def listen(port: Int)(connectionHandler: (ClientConnection) => Any)(inputHandler: (Array[Byte], Int, Int) => Unit) = {
+	def listenCustom(port: Int, peer: SimpyPacketPeerProtocol)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
+		listen(port) {chan =>
+			new Acceptor(chan, peer) {
+				override def newConnection(connection: SocketChannel) = {
+					val con: SimpyPacketConnection = SimpyPacketConnection(connection, peer, Some(this))
+					
+					connectionHandler(con)
+					con
+				}
+			}
+		}
+	}
+	def listen(port: Int, peer: SimpyPacketPeerProtocol): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
+	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
 		val sock = ServerSocketChannel.open
 
 		sock.configureBlocking(false)
 		sock.socket.bind(new InetSocketAddress(port))
-		Connection.addConnection(new Acceptor(sock) {
-			def newConnection(connection: SocketChannel) = {
-				val con: ClientConnection = ClientConnection(connection, Some(this))(inputHandler)
-
-				connectionHandler(con)
-				con
-			}
-		})
+		Connection.addConnection(socketHandler(sock))
 	}
 }
 
-abstract class Acceptor(serverChan: ServerSocketChannel) extends Connection[ServerSocketChannel](serverChan) {
+class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerProtocol) extends Connection[ServerSocketChannel](serverChan) {
 	import Connection._
 
-	def newConnection(chan: SocketChannel): ClientConnection
+	def newConnection(chan: SocketChannel) = SimpyPacketConnection(chan, peer, Some(this))
 	def register {
 		serverChan.register(selector, SelectionKey.OP_ACCEPT)
 	}
 	override def handle(key: SelectionKey) {
 		if (key.isAcceptable) {
-			println("accept")
 			val connection = serverChan.accept
 			val newCon = newConnection(connection)
 
@@ -41,9 +46,9 @@ abstract class Acceptor(serverChan: ServerSocketChannel) extends Connection[Serv
 		}
 		super.handle(key)
 	}
-	def remove(con: ClientConnection) {
+	def remove(con: SimpyPacketConnection) {
 		connections.remove(con.chan)
-		con.chan.register(selector, 0)
+		con.chan.keyFor(selector).cancel
 	}
 	override def close {
 		serverChan.close

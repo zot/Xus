@@ -514,7 +514,7 @@ Also see [[AdvancedOptions]]</pre>
 <div title="DefaultTiddlers" modifier="Zot" created="200909131611" changecount="1">
 <pre>[[Goals]]</pre>
 </div>
-<div title="Goals" modifier="WRB" created="200909131612" modified="200909141152" changecount="121">
+<div title="Goals" modifier="WRB" created="200909131612" modified="200909151442" changecount="122">
 <pre>[[Roadmap]]
 
 !Small-to-medium scale p2p
@@ -585,6 +585,7 @@ Also see [[AdvancedOptions]]</pre>
 * signatures must be computed on text version of XML document (not pretty printed)
 
 Messages From Peer To Topic Space Owner ([[Peer to Space Examples]])
+* joinspace SPACE, MSGID
 * broadcast TOPIC, MSGID, MESSAGE
 * unicast TOPIC, MSGID, MESSAGE
 * DHT send TOPIC, KEY, MSGID, MESSAGE
@@ -598,7 +599,7 @@ Messages From Topic Space Owner To Peer ([[Space to Peer Examples]])
 * DHT send SENDER ID, TOPIC, KEY, MSGID, MESSAGE
 * delegate SENDER ID, MSGID, MESSAGE
 * completed MSGID
-* failed delegate MSGID
+* failed MSGID
 
 Messages From Peer To Peer ([[Peer to Peer Examples]])
 * challenge TOKEN, MSGID
@@ -619,22 +620,21 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 <div title="MainMenu" modifier="Zot" created="200909131611" changecount="1">
 <pre>MainMenu</pre>
 </div>
-<div title="Peer to Peer Examples" modifier="WRB" created="200909140810" modified="200909141110" changecount="7">
+<div title="Peer to Peer Examples" modifier="WRB" created="200909140810" modified="200909151621" changecount="11">
 <pre>{{{
 &lt;challenge token=&quot;ASF098asdf0-9809&quot;/&gt;
 &lt;signature sig=&quot;0980987asdflopiuSF^$#&quot;&gt;&lt;challenge-response peerid=&quot;234234;KLJSDF098&quot; token=&quot;ASF098asdf0-9809&quot; accept=&quot;true&quot;/&gt;&lt;/signature&gt;
 &lt;direct topic-space=&quot;12&quot; topic=&quot;9&quot; msgid=&quot;12&quot;&gt;here is a message&lt;/direct&gt;
-&lt;received msgid=&quot;12&quot;/&gt;
+&lt;completed msgid=&quot;12&quot;/&gt;
+&lt;failed msgid=&quot;34&quot;/&gt;
 }}}</pre>
 </div>
-<div title="Peer to Space Examples" modifier="WRB" created="200909140717" modified="200909141152" changecount="10">
+<div title="Peer to Space Examples" modifier="WRB" created="200909140717" modified="200909161539" changecount="14">
 <pre>{{{
 &lt;broadcast topic=&quot;1&quot; msgid=&quot;35&quot;&gt;&lt;system-message&gt;Hello there&lt;/system-message&gt;&lt;/broadcast&gt;
 &lt;unicast topic=&quot;1&quot; msgid=&quot;9&quot;&gt;&lt;system-message&gt;Hello there&lt;/system-message&gt;&lt;/unicast&gt;
-&lt;dht-send key=&quot;5&quot; topic=&quot;54&quot; msgid=&quot;123123&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
+&lt;dht key=&quot;5&quot; topic=&quot;54&quot; msgid=&quot;123123&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
 &lt;delegate peer=&quot;5&quot; msgid=&quot;123123&quot;&gt;&lt;private-message&gt;Whisper, whisper&lt;/private-message&gt;&lt;/direct&gt;
-&lt;received msgid=&quot;23&quot;/&gt;
-&lt;ping msgid=&quot;55&quot;/&gt;
 }}}</pre>
 </div>
 <div title="Roadmap" modifier="WRB" created="200909141131" modified="200909141147" changecount="12">
@@ -660,14 +660,12 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 <div title="SiteTitle" modifier="Zot" created="200909131610" changecount="1">
 <pre>Xus</pre>
 </div>
-<div title="Space to Peer Examples" modifier="WRB" created="200909140809" modified="200909141153" changecount="3">
+<div title="Space to Peer Examples" modifier="WRB" created="200909140809" modified="200909162128" changecount="10">
 <pre>{{{
-&lt;broadcast msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot;&gt;&lt;position-update x=&quot;234.2&quot; y=&quot;123.5&quot; z=&quot;234.23&quot; roll=&quot;12.323&quot; pitch=&quot;23.4&quot; yaw=&quot;44.66&quot;/&gt;&lt;/broadcast&gt;
-&lt;unicast msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot;&gt;test&lt;/unicast&gt;
-&lt;dht-send sender=&quot;67&quot; key=&quot;5&quot; topic=&quot;54&quot; msgid=&quot;123123&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
-&lt;delegate msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot;&gt;&lt;whisper&gt;Doy?&lt;/whisper&gt;&lt;/delegate&gt;
-&lt;completed msgid=&quot;12&quot;/&gt;
-&lt;failed-delegate peerid=&quot;232&quot;/&gt;
+&lt;delegated-broadcast msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot; space=&quot;7&quot;&gt;&lt;position-update x=&quot;234.2&quot; y=&quot;123.5&quot; z=&quot;234.23&quot; roll=&quot;12.323&quot; pitch=&quot;23.4&quot; yaw=&quot;44.66&quot;/&gt;&lt;/broadcast&gt;
+&lt;delegated-unicast msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot; space=&quot;7&quot;&gt;test&lt;/unicast&gt;
+&lt;delegated-dht sender=&quot;67&quot; key=&quot;5&quot; topic=&quot;54&quot;  space=&quot;7&quot; msgid=&quot;123123&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
+&lt;delegated-direct msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot; space=&quot;7&quot;&gt;&lt;whisper&gt;Doy?&lt;/whisper&gt;&lt;/delegate&gt;
 }}}</pre>
 </div>
 </div>

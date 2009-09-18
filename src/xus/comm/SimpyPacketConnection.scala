@@ -6,6 +6,8 @@ import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.channels._
 import scala.actors.TIMEOUT
+import scala.actors.Exit
+import scala.actors.Actor
 import scala.actors.Actor._
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.ArrayStack
@@ -18,21 +20,29 @@ object Connection {
 	val selector = Selector.open
 	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
 	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
+	val actorExceptions = actor {
+		self.trapExit = true
+		react {
+			case Exit(from: Actor, ex: Exception) =>
+				ex.printStackTrace
+		}
+	}
 	val selectorThread = actor {
+		self link actorExceptions
 		loop {
 			receiveWithin(1) {
 			case con: Connection[_] =>
-				con.register 
-				connections(con.chan) = con
+			con.register 
+			connections(con.chan) = con
 			case TIMEOUT =>
 			case other =>
 			}
-			val count = selector.select(100)
+			val count = selector.select()
 			val keys = selector.selectedKeys.iterator
-			
+				
 			while (keys.hasNext) {
 				val k = keys.next
-				
+					
 				keys.remove
 				if (k.isValid) {
 					connections(k.channel).handle(k)
@@ -41,11 +51,18 @@ object Connection {
 		}
 	}
 
+	def guard(block: => Unit) {
+		try {
+			block
+		} catch {
+			case ex: Exception => ex.printStackTrace
+		}
+	}
 	def queue(obj: Any) {
 		selectorThread ! obj
 		selector.wakeup
 	}
-	def get = {
+	def newBuffer = {
 		buffers synchronized {
 			if (buffers.isEmpty) {
 				ByteBuffer.allocateDirect(BUFFER_SIZE)
@@ -67,17 +84,15 @@ object Connection {
 		newCon
 	}
 }
-object ClientConnection {
+object SimpyPacketConnection {
 	import Connection._
 
-	def apply(connection: SocketChannel, optAcceptor: Option[Acceptor])(inputHandler: (Array[Byte], Int, Int) => Unit): ClientConnection = new ClientConnection(connection, optAcceptor) {
-		def handleInput(bytes: Array[Byte], offset: Int, length: Int) = inputHandler(bytes, offset, length)
-	}
-	def apply(host: String, port: Int)(inputHandler: (Array[Byte], Int, Int) => Unit): ClientConnection = {
+	def apply(connection: SocketChannel, peer: SimpyPacketPeerProtocol, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
+	def apply(host: String, port: Int, peer: SimpyPacketPeerProtocol): SimpyPacketConnection = {
 		val chan = SocketChannel.open
 
 		chan.configureBlocking(false)
-		val con = addConnection(ClientConnection(chan, None)(inputHandler))
+		val con = addConnection(this(chan, peer, None))
 		chan.connect(new InetSocketAddress(host, port))
 		con
 	}
@@ -91,10 +106,12 @@ abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
 	}
 	def handle(key: SelectionKey) = ()
 }
-abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) {
-	def handleInput(bytes: Array[Byte], offset: Int, length: Int): Unit
-
+object foo {
+	var tot = 0
+}
+class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProtocol, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) with SimpyPacketConnectionProtocol {
 	import Connection._
+	var msgId = -1
 	val outputLenBuf = new Array[Byte](4)
 	val inputLenBuf = new Array[Byte](4)
 	val output = new ArrayBuffer[ByteBuffer]
@@ -106,16 +123,19 @@ abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[A
 		}
 	}
 	val outputActor = actor {
+		self link actorExceptions
 		loop {
 			react {
-			case _ if !chan.isOpen => doClose
-			case 0 => doClose
 			case 1 => writeOutput
-			case (newOutput: Array[Byte], offset: Int, len: Int) => doAddOutput(newOutput, offset, len)
+			case (newOutput: Array[Byte], offset: Int, len: Int) => doSend(newOutput, offset, len)
+			case 0 => doClose
+			case _ if !chan.isOpen => doClose
+			case x => println("unhandled case: " + x)
 			}
 		}
 	}
 	val inputActor = actor {
+		self link actorExceptions
 		loop {
 			react {
 			case 0 => exit
@@ -125,41 +145,50 @@ abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[A
 		}
 	}
 
+	def nextOutgoingMsgId = {
+		msgId += 1
+		msgId
+	}
 	def register {
 		chan.configureBlocking(false)
-		chan.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE | (if (optAcceptor == None) SelectionKey.OP_CONNECT else 0))
+		chan.register(selector, SelectionKey.OP_READ | /* SelectionKey.OP_WRITE | */ (if (optAcceptor == None) SelectionKey.OP_CONNECT else 0))
 	}
-	def addOutput(newOutput: Array[Byte]) {addOutput(newOutput, 0, newOutput.length)}
-	def addOutput(newOutput: Array[Byte], offset: Int, len: Int) {outputActor ! (newOutput, offset, len)}
-	def doAddOutput(newOutput: Array[Byte], offset: Int, len: Int) {
+	def send(newOutput: Array[Byte], offset: Int, len: Int) {outputActor ! (newOutput, offset, len)}
+	def doSend(newOutput: Array[Byte], offset: Int, len: Int) {
 		if (output.isEmpty) {
-			output.append(get)
+			output.append(newBuffer)
 		} else {
 			output.last.compact
 			if (output.last.remaining < 5) {
 				output.last.flip
-				output.append(get)
+				output.append(newBuffer)
 			}
 		}
 		putLen(len)
-		((offset + output.last.remaining until offset + len by BUFFER_SIZE) ++ List(newOutput.size)).foldLeft(offset) {(s1, s2) =>
+		((offset + output.last.remaining until offset + len by BUFFER_SIZE) ++ List(offset + len)).foldLeft(offset) {(s1, s2) =>
 			output.last.put(newOutput, s1, s2 - s1)
 			output.last.flip
-			output.append(get)
+			output.append(newBuffer)
 			s2
 		}
 		output.last.flip
+		if (output.last.remaining == 0) {
+			output.remove(output.size - 1)
+		}
 		writeOutput
 	}
 	def writeOutput {
-		if (chan.write(output.toArray, 0, output.size) > 0) {
+		while (!output.isEmpty && output.last.remaining > 0) {
+			chan.write(output.toArray)
 			while (!output.isEmpty && output(0).remaining == 0) {
 				release(output.remove(0))
 			}
 		}
 	}
 	def readInput {
-		if (chan.read(input) > 0) {
+		chan.read(input) match {
+		case -1 => outputActor ! 0
+		case x if x > 0 => 
 			partialInput.write(input.array, 0, input.position)
 			input.clear
 			processInput
@@ -181,15 +210,15 @@ abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[A
 	def processInput {
 		if (partialInput.size > 4) {
 			val size = getSize
+			val totalInput = partialInput.size
 
-			if (size + 4 <= partialInput.size) {
+			if (size + 4 <= totalInput) {
 				val bytes = partialInput.bytes
-				val oldSize = partialInput.size
 
-				handleInput(bytes, 4, size)
-				if (oldSize > size + 4) {
-					System.arraycopy(bytes, size + 4, bytes, 0, oldSize - size - 4)
-					partialInput.setSize(oldSize - size - 4)
+				peer.receiveInput(this, bytes, 4, size)
+				if (totalInput > size + 4) {
+					System.arraycopy(bytes, size + 4, bytes, 0, totalInput - size - 4)
+					partialInput.setSize(totalInput - size - 4)
 				} else {
 					partialInput.reset
 				}
@@ -209,9 +238,15 @@ abstract class ClientConnection(clientChan: SocketChannel, optAcceptor: Option[A
 		(bytes(3) << 24) | (bytes(2) << 16) | (bytes(1) << 8) | bytes(0)
 	}
 	override def handle(key: SelectionKey) = {
-		if (key.isReadable) inputActor ! 1
+		if (key.isReadable) {
+			if (!chan.isOpen) {
+				inputActor ! 0
+			} else if (chan.isConnected) {
+				inputActor ! 1
+			}
+		}
 		if (key.isWritable) outputActor ! 1
-		if (key.isConnectable) chan.finishConnect()
+		if (key.isConnectable && chan.isConnectionPending) chan.finishConnect()
 		super.handle(key)
 	}
 }
