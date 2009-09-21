@@ -22,7 +22,7 @@ import javax.xml.parsers.{ SAXParser, SAXParserFactory }
 */
 class NoBindingFactoryAdapter extends FactoryAdapter with NodeFactory[Elem]
 {
-	println("INIT NO BINDING")
+//	println("INIT NO BINDING")
   /** True.  Every XML node may contain text that the application needs */
   def nodeContainsText(label: String) = true
 

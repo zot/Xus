@@ -24,8 +24,8 @@ class PeerConnection(implicit con: SimpyPacketConnectionProtocol) extends PeerCo
 	// request: challenge, response: challengeResponse
 	def sendChallenge(token: String, msgId: Int = -1) = send(<challenge token={token} msgId={msgIdFor(msgId)}/>)
 
-	def sendChallengeResponse(token: String, key: PublicKey, msgId: Int = -1) =
-		send(sign(<challenge-response peerid={publicKeyString} token={token} msgId={msgIdFor(msgId)}/>))
+	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1) =
+		send(sign(<challenge-response peerid={publicKeyString} token={token} requestId={str(requestId)} msgId={msgIdFor(msgId)}/>))
 
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping

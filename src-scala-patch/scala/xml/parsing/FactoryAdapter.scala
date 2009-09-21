@@ -57,7 +57,7 @@ abstract class FactoryAdapter extends DefaultHandler with factory.XMLLoader[Node
   var curTag : String = null
   var capture: Boolean = false
 
-  println("INIT FA")
+//  println("INIT FA")
   // This is the fix
   scopeStack push TopScope
 

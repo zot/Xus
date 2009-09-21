@@ -49,9 +49,7 @@ class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	// peer-to-peer messages
 	//
 	def verifySignature(msg: ChallengeResponse): Boolean = true
-	override def receive(msg: Challenge) {
-		msg.con.sendChallengeResponse(msg.token, publicKey)
-	}
+	override def receive(msg: Challenge) = msg.con.sendChallengeResponse(msg.token, publicKey, msg.msgId)
 	override def receive(msg: ChallengeResponse) {}
 	override def receive(msg: Completed) {}
 	override def receive(msg: Failed) {}

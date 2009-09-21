@@ -46,7 +46,7 @@ trait PeerConnectionProtocol {
 	//
 	// request: challenge, response: challengeResponse
 	def sendChallenge(token: String, msgId: Int = -1): Unit
-	def sendChallengeResponse(token: String, key: PublicKey, msgId: Int = -1): Unit
+	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1): Unit
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
 	def sendDirect(topicSpace: Int, topic: Int, message: Any, msgId: Int = -1): Unit
@@ -154,9 +154,7 @@ trait PeerTrait {
 	//
 	def dispatch(con: PeerConnectionProtocol, node: Node) = dispatchers(node.label.toLowerCase)(con, node, this)
 
-	def receive(msg: Challenge) {
-		msg.con.sendChallengeResponse(msg.token, publicKey)
-	}
+	def receive(msg: Challenge) = basicReceive(msg)
 	def receive(msg: ChallengeResponse) = basicReceive(msg)
 	def receive(msg: Completed) = basicReceive(msg)
 	def receive(msg: Failed) = basicReceive(msg)
