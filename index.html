@@ -511,10 +511,11 @@ Also see [[AdvancedOptions]]</pre>
 </div>
 <!--POST-SHADOWAREA-->
 <div id="storeArea">
-<div title="DefaultTiddlers" modifier="Zot" created="200909131611" changecount="1">
-<pre>[[Goals]]</pre>
+<div title="DefaultTiddlers" modifier="WRB" created="200909131611" modified="200909210633" changecount="2">
+<pre>[[Overview]]
+[[Goals]]</pre>
 </div>
-<div title="Goals" modifier="WRB" created="200909131612" modified="200909210629" changecount="123">
+<div title="Goals" modifier="WRB" created="200909131612" modified="200909210708" changecount="124">
 <pre>[[Roadmap]]
 
 !Small-to-medium scale p2p
@@ -564,7 +565,9 @@ Also see [[AdvancedOptions]]</pre>
 * peers can also connect directly to other peers
 ''Services''
 * connection requests
-** a peer can request a peer to make a connection back to it reverse connection if it can accept connections but the recipient cannot
+** a peer can request another peer to make a connection back to it reverse connection if it can accept connections but the recipient cannot
+* port configuration testing
+** a peer can request another peer to perform a test to determine whether ports are properly configured
 * topic properties
 ** stored as ordered map
 ** set
@@ -615,6 +618,27 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 </div>
 <div title="MainMenu" modifier="Zot" created="200909131611" changecount="1">
 <pre>MainMenu</pre>
+</div>
+<div title="Overview" modifier="WRB" created="200909210655" modified="200909210714" changecount="9">
+<pre>Xus is a peer-to-peer protocol with a reference implementation in Scala.  The point of Xus is to provide a peer-to-peer platform that is simple, powerful, practical, and easy to use.  People can use it for games, social networks, source code repositories, or whatever.
+
+* ''Simple'': able to implemented with a relatively small amount of code so that it's easy to maintain and fix
+** Layered: there are 3 layers.  Layering separates the concerns of the protocol and makes it easier to understand
+** Self contained: the reference implementation does not rely on third party libraries, reducing cognitive overhead for future developers
+** Scala: reference implementation is is Scala, which allows for smaller code that is &quot;less noisy&quot; than Java
+** Straightforward implementation: simple, direct routing
+* ''Powerful'': strong enough to support common p2p tropes and some new ones
+** Messaging: multicast, unicast, dht, and delegated and direct p2p messaging
+** Delegated messaging allows peers behind ~NATs to receive messages from other peers
+** File storage, backed with Git
+** Replicated properties for simple shared data
+* ''Practical''
+** Medium scale allows you to know when peers disconnect
+** Works through ~NATs
+* ''Easy to use''
+** Built-in port testing -- peers can request other peers to test their port configurations
+** API is small with a minimum of required setup
+** Reference implementation will include a ~UPnP port configuration tool (ported from the Plexus codebase)</pre>
 </div>
 <div title="Peer to Peer Examples" modifier="WRB" created="200909140810" modified="200909210625" changecount="12">
 <pre>{{{
