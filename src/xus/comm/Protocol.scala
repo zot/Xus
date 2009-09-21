@@ -34,7 +34,13 @@ trait SimpyPacketConnectionProtocol {
 /**
  * TopicConnection is a layer 2 connection to a peer
  */
-trait TopicSpaceConnectionProtocol {
+trait PeerConnectionProtocol {
+	def peerId: Int
+	def peerKey: PublicKey
+
+	// low level protocol
+	def send(node: Node): Unit
+
 	//
 	// peer-to-peer messages
 	//
@@ -67,39 +73,18 @@ trait TopicSpaceConnectionProtocol {
 trait SimpyPacketPeerProtocol {
 	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, length: Int): Unit
 }
-object Message {
-	def apply(con: TopicSpaceConnectionProtocol, node: Node) = {
-		def set(msg: Message) = msg.set(con, node)
-
-		node.label.toLowerCase match {
-		case "challenge" => set(new Challenge)
-		case "challenge-response" => set(new ChallengeResponse)
-		case "completed" => set(new Completed)
-		case "failed" => set(new Failed)
-		case "direct" => set(new Direct)
-		case "delegate-direct" => set(new DelegateDirect)
-		case "broadcast" => set(new Broadcast)
-		case "unicast" => set(new Unicast)
-		case "dht" => set(new DHT)
-		case "delegated-direct" => set(new DelegatedDirect)
-		case "delegated-broadcast" => set(new DelegatedBroadcast)
-		case "delegated-unicast" => set(new DelegatedUnicast)
-		case "delegated-dht" => set(new DelegatedDHT)
-		}
-	}
-}
 class Message {
-	var con: TopicSpaceConnectionProtocol = null
-	var node: Node = null
+	var con: PeerConnectionProtocol = null
+	implicit var node: Node = null
 
-	def set(newCon: TopicSpaceConnectionProtocol, newNode: Node): this.type = {
+	def set(newCon: PeerConnectionProtocol, newNode: Node): this.type = {
 		con = newCon
 		node = newNode
 		this
 	}
-	def string(att: String) = attrString(node, att)
-	def stringOpt(att: String): Option[String] = {
-		val id = attrString(node, att)
+	def string(att: String)(implicit n: Node) = attrString(n, att)
+	def stringOpt(att: String)(implicit n: Node): Option[String] = {
+		val id = attrString(n, att)
 
 		if (id == null) {
 			None
@@ -107,9 +92,10 @@ class Message {
 			Some(id)
 		}
 	}
-	def int(att: String) = Integer.parseInt(string(att))
-	def intOpt(att: String): Option[Int] = stringOpt(att).map(Integer.parseInt(_))
-	def msgId = string("msgId")
+	def int(att: String)(implicit n: Node) = Integer.parseInt(string(att)(n))
+	def intOpt(att: String)(implicit n: Node): Option[Int] = stringOpt(att)(n).map(Integer.parseInt(_))
+	def msgId = int("msgid")
+	override def toString = getClass.getSimpleName + ": " + node
 }
 class Challenge extends Message {
 	def token = string("token")
@@ -125,64 +111,73 @@ class TopicSpaceMessage extends Message {
 	def topic = int("topic")
 	def message = node.child
 }
-class Direct extends TopicSpaceMessage
-class DHT extends TopicSpaceMessage
-class Broadcast extends TopicSpaceMessage
-class Unicast extends TopicSpaceMessage
-class DelegateDirect extends TopicSpaceMessage
-class DelegatedMessage extends TopicSpaceMessage {
+class PeerToSpaceMessage extends TopicSpaceMessage {
+	def sender = con.peerId
+}
+class Direct extends PeerToSpaceMessage
+class DHT extends PeerToSpaceMessage
+class Broadcast extends PeerToSpaceMessage
+class Unicast extends PeerToSpaceMessage
+class DelegateDirect extends PeerToSpaceMessage
+class SpaceToPeerMessage extends TopicSpaceMessage {
 	def sender = int("sender")
 }
-class DelegatedDirect extends DelegatedMessage
-class DelegatedDHT extends DelegatedMessage
-class DelegatedBroadcast extends DelegatedMessage
-class DelegatedUnicast extends DelegatedMessage
+class DelegatedDirect extends SpaceToPeerMessage
+class DelegatedDHT extends SpaceToPeerMessage
+class DelegatedBroadcast extends SpaceToPeerMessage
+class DelegatedUnicast extends SpaceToPeerMessage
 
-trait TopicSpacePeerProtocol {
+object PeerTrait {
+	val dispatchers = Map(
+	"challenge" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Challenge().set(con, node))},
+	"challenge-response" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new ChallengeResponse().set(con, node))},
+	"completed" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Completed().set(con, node))},
+	"failed" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Failed().set(con, node))},
+	"direct" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Direct().set(con, node))},
+	"delegate-direct" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DelegateDirect().set(con, node))},
+	"broadcast" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Broadcast().set(con, node))},
+	"unicast" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Unicast().set(con, node))},
+	"dht" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DHT().set(con, node))},
+	"delegated-direct" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DelegatedDirect().set(con, node))},
+	"delegated-broadcast" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DelegatedBroadcast().set(con, node))},
+	"delegated-unicast" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DelegatedUnicast().set(con, node))},
+	"delegated-dht" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new DelegatedDHT().set(con, node))}
+	)
+}
+trait PeerTrait {
+	import PeerTrait._
+
 	def publicKey: PublicKey
 
 	//
 	// peer-to-peer messages
 	//
-	def basicReceive(msg: Message) {
-		msg match {
-		case m: Challenge => receive(m)
-		case m: ChallengeResponse => receive(m, verifySignature(m))
-		case m: Completed => receive(m)
-		case m: Failed => receive(m)
-		case m: Direct => receive(m)
-		case m: Broadcast => receive(m)
-		case m: Unicast => receive(m)
-		case m: DHT => receive(m)
-		case m: DelegateDirect => receive(m)
-		case m: DelegatedBroadcast => receive(m)
-		case m: DelegatedUnicast => receive(m)
-		case m: DelegatedDHT => receive(m)
-		case m: DelegatedDirect => receive(m)
-		}
-	}
-	def verifySignature(msg: ChallengeResponse): Boolean
+	def dispatch(con: PeerConnectionProtocol, node: Node) = dispatchers(node.label.toLowerCase)(con, node, this)
+
 	def receive(msg: Challenge) {
 		msg.con.sendChallengeResponse(msg.token, publicKey)
 	}
-	def receive(msg: ChallengeResponse, validSig: Boolean) {}
-	def receive(msg: Completed) {}
-	def receive(msg: Failed) {}
-	def receive(msg: Direct) {}
+	def receive(msg: ChallengeResponse) = basicReceive(msg)
+	def receive(msg: Completed) = basicReceive(msg)
+	def receive(msg: Failed) = basicReceive(msg)
+	def receive(msg: Direct) = basicReceive(msg)
 	//
 	// peer-to-space messages
 	//
-	def receive(msg: Broadcast) {}
-	def receive(msg: Unicast) {}
-	def receive(msg: DHT) {}
-	def receive(msg: DelegateDirect) {}
-	
+	def receive(msg: Broadcast) = basicReceive(msg)
+	def receive(msg: Unicast) = basicReceive(msg)
+	def receive(msg: DHT) = basicReceive(msg)
+	def receive(msg: DelegateDirect) = basicReceive(msg)
+
 	//
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
-	def receive(msg: DelegatedBroadcast) {}
-	def receive(msg: DelegatedUnicast) {}
-	def receive(msg: DelegatedDHT) {}
-	def receive(msg: DelegatedDirect) {}
+	def receive(msg: DelegatedBroadcast) = basicReceive(msg)
+	def receive(msg: DelegatedUnicast) = basicReceive(msg)
+	def receive(msg: DelegatedDHT) = basicReceive(msg)
+	def receive(msg: DelegatedDirect) = basicReceive(msg)
+
+	// catch-all
+	def basicReceive(msg: Message) {}
 }

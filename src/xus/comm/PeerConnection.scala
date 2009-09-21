@@ -8,7 +8,16 @@ import java.io.ByteArrayOutputStream
 import java.security.PublicKey
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 
-class TopicSpaceConnection(con: SimpyPacketConnectionProtocol) extends TopicSpaceConnectionProtocol {
+/**
+ * A connection to another peer
+ */
+class PeerConnection(implicit con: SimpyPacketConnectionProtocol) extends PeerConnectionProtocol {
+	import Util._
+
+	var peerId = 0
+	var peerKey = null
+	var authenticated = false
+
 	//
 	// peer-to-peer messages
 	//
@@ -74,6 +83,4 @@ class TopicSpaceConnection(con: SimpyPacketConnectionProtocol) extends TopicSpac
 	}
 	def sign(node: Node) = <signature sig="{stringFor(sign(keyPair.getPrivate, node.toString.toByteArray))}">{node}</signature>
 	def publicKeyString = ""
-	def msgIdFor(id: Int) = (if (id == -1) con.nextOutgoingMsgId else id).toString
-	def str(i: Int) = i.toString
 }

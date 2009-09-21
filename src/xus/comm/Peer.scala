@@ -12,15 +12,18 @@ import scala.collection.mutable.Map
 
 import Util._
 
-class Peer extends TopicSpacePeerProtocol with SimpyPacketPeerProtocol {
+class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	var keyPair: KeyPair = null
 	var prefsDirectory: Directory = null
-	val topicCons = Map[SimpyPacketConnectionProtocol, TopicSpaceConnectionProtocol]()
+	val peerConnections = Map[SimpyPacketConnectionProtocol, PeerConnectionProtocol]()
+	val topicsOwned = Map[(Int,Int), Topic]()
+	val topicOwners = Map[Topic, PeerConnection]()
+	val topicsJoined = Map[(Int,Int), Topic]()
 
 	def publicKey = keyPair.getPublic
 
 	def addConnection(con: SimpyPacketConnectionProtocol) = {
-		topicCons(con) = new TopicSpaceConnection(con)
+		peerConnections(con) = new PeerConnection()(con)
 		con
 	}
 	///////////////////////////
@@ -36,7 +39,7 @@ class Peer extends TopicSpacePeerProtocol with SimpyPacketPeerProtocol {
 		} catch {
 			case x: Exception => x.printStackTrace
 		}
-		basicReceive(Message(topicCons(con), fac.rootElem))
+		dispatch(peerConnections(con), fac.rootElem)
 	}
 
 	///////////////////////////
@@ -46,4 +49,30 @@ class Peer extends TopicSpacePeerProtocol with SimpyPacketPeerProtocol {
 	// peer-to-peer messages
 	//
 	def verifySignature(msg: ChallengeResponse): Boolean = true
+	override def receive(msg: Challenge) {
+		msg.con.sendChallengeResponse(msg.token, publicKey)
+	}
+	override def receive(msg: ChallengeResponse) {}
+	override def receive(msg: Completed) {}
+	override def receive(msg: Failed) {}
+	override def receive(msg: Direct) {}
+
+	//
+	// peer-to-space messages
+	//
+	// delegate broadcasting, etc to the topic
+	override def receive(msg: Broadcast) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+	override def receive(msg: Unicast) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+	override def receive(msg: DHT) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+	override def receive(msg: DelegateDirect) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+
+	//
+	// space-to-peer messages
+	// these are delegated from other peers
+	//
+	// delegate message reception handling to the topic
+	override def receive(msg: DelegatedBroadcast) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+	override def receive(msg: DelegatedUnicast) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+	override def receive(msg: DelegatedDHT) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+	override def receive(msg: DelegatedDirect) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
 }

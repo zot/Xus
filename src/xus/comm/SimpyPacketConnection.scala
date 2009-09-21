@@ -188,7 +188,8 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 	def readInput {
 		chan.read(input) match {
 		case -1 => outputActor ! 0
-		case x if x > 0 => 
+		case 0 =>
+		case _ => 
 			partialInput.write(input.array, 0, input.position)
 			input.clear
 			processInput
