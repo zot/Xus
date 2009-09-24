@@ -25,32 +25,27 @@ object Connection {
 	val selector = Selector.open
 	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
 	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
-	val actorExceptions = actor {
-		self.trapExit = true
-		react {
-			case Exit(from: Actor, ex: Exception) =>
-				ex.printStackTrace
-		}
-	}
 	val selectorThread = actor {
-		self link actorExceptions
+		self link Util.actorExceptions
 		loop {
-			receiveWithin(1) {
+			receiveWithin(if (selector.keys.isEmpty) 1000 else 1) {
 			case con: Connection[_] =>
 			con.register 
 			connections(con.chan) = con
 			case TIMEOUT =>
 			case other =>
 			}
-			val count = selector.select()
-			val keys = selector.selectedKeys.iterator
+			if (!selector.keys.isEmpty) {
+				val count = selector.select()
+				val keys = selector.selectedKeys.iterator
 				
-			while (keys.hasNext) {
-				val k = keys.next
+				while (keys.hasNext) {
+					val k = keys.next
 					
-				keys.remove
-				if (k.isValid) {
-					connections(k.channel).handle(k)
+					keys.remove
+					if (k.isValid) {
+						connections(k.channel).handle(k)
+					}
 				}
 			}
 		}
@@ -128,7 +123,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 		}
 	}
 	val outputActor = actor {
-		self link actorExceptions
+		self link Util.actorExceptions
 		loop {
 			react {
 			case 1 => writeOutput
@@ -140,7 +135,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 		}
 	}
 	val inputActor = actor {
-		self link actorExceptions
+		self link Util.actorExceptions
 		loop {
 			react {
 			case 0 => exit

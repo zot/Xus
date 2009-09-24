@@ -8,9 +8,38 @@ package xus.testing
 import scala.io.Source
 import xus.comm._
 import scala.actors.Actor._
+import scala.swing._
+import scala.swing.Action
 
 object IM extends Peer {
 	var con: SimpyPacketConnectionProtocol = null
+	var frame = new MainFrame {
+		import javax.swing.KeyStroke
+		import javax.swing.text.JTextComponent
+
+		val output = new EditorPane {
+			border = Swing.EtchedBorder
+		}
+		val input = new EditorPane {
+			val inputKm = JTextComponent.addKeymap("input", JTextComponent.getKeymap(JTextComponent.DEFAULT_KEYMAP))
+			inputKm.addActionForKeyStroke(KeyStroke.getKeyStroke("ENTER"), Action("send") {
+				peerConnections(con).sendBroadcast(0, 1, text)
+				text = ""
+			}.peer)
+			border = Swing.EtchedBorder
+			peer.setKeymap(inputKm)
+		}
+		input.maximumSize = new java.awt.Dimension(Integer.MAX_VALUE, 24)
+		input.preferredSize = new java.awt.Dimension(Integer.MAX_VALUE, 24)
+		val km = input.peer.getKeymap
+		contents = new BoxPanel(Orientation.Vertical) {
+			contents += output
+			contents += input
+		}
+		listenTo(input)
+		size = (400, 300)
+		open
+	}
 
 	def main(args: Array[String]) {
 		if (args(0) == "server") {
@@ -31,36 +60,27 @@ object IM extends Peer {
 //		println("Received direct message: " + msg.node)
 	}
 	def server(port: Int) {
+		Swing.onEDT {frame.title = "Server Chat"}
 		topicsOwned((0, 0)) = new Topic(0, 0, this)
-		topicsOwned((0, 1)) = new Topic(0, 1, this)
-		Acceptor.listenCustom(port, this)({newCon: SimpyPacketConnection =>
-			con = addConnection(newCon)
-			actor {processInput}
-		})
-	}
-	def processInput {
-		while (true) {
-			if (con != null) {
-				System.out.print("> ")
-				System.out.flush
-				for (line <- Source.stdin.getLines()) {
-					if (!line.isEmpty) {
-						peerConnections(con).sendBroadcast(0, 1, line)
-						System.out.print("> ")
-						System.out.flush
-					}
-				}
-			}
-		}
+		val chatTopic = new ChatTopic(0, 1)
+		topicsOwned((0, 1)) = chatTopic
+		topicsJoined((0, 1)) = chatTopic
+		chatTopic.members.add(selfConnection)
+		con = selfConnection.con
+		Acceptor.listen(port, this)
 	}
 	def client(port: Int) {
-		topicsJoined((0, 1)) = new Topic(0, 1, this) {
-			override def basicReceive(msg: SpaceToPeerMessage) {
-				println("Basic receive: " + msg)
-			}
-		}
+		Swing.onEDT {frame.title = "Client Chat"}
+		topicsJoined((0, 1)) = new ChatTopic(0, 1)
 		con = addConnection(SimpyPacketConnection("localhost", port, this))
 		peerConnections(con).sendDirect(0, 0, <join space="0" topic="1" id="1"/>)
-		actor {processInput}
+	}
+	class ChatTopic(override val space: Int, override val topic: Int) extends Topic(space, topic, this) {
+		override def basicReceive(msg: SpaceToPeerMessage) {
+			val doc = frame.output.peer.getDocument
+
+			doc.insertString(doc.getLength, msg.payload.mkString + "\n", null)
+			println("Basic receive: " + msg)
+		}
 	}
 }

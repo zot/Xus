@@ -8,22 +8,41 @@ package xus.comm
 import scala.xml.Elem
 import scala.xml.Node
 import scala.xml.parsing.NoBindingFactoryAdapter
-import scala.io.Directory
+import scala.tools.nsc.io.Directory
 import java.io.ByteArrayInputStream
 import java.security.KeyPair
 import java.security.PublicKey
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentParser
 import scala.collection.mutable.Map
+import scala.actors.Actor._
 
 import Util._
 
 class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	var keyPair: KeyPair = null
 	var prefsDirectory: Directory = null
-	val peerConnections = Map[SimpyPacketConnectionProtocol, PeerConnectionProtocol]()
+	val peerConnections = Map[SimpyPacketConnectionProtocol, PeerConnection]()
 	val topicsOwned = Map[(Int,Int), Topic]()
-	val topicOwners = Map[Topic, PeerConnection]()
+	val topicOwners = Map[Topic, PeerConnectionProtocol]()
 	val topicsJoined = Map[(Int,Int), Topic]()
+	val selfConnection = peerConnections(addConnection(new DirectSimpyPacketConnection(this)))
+	val inputActor = actor {
+		loop {
+			react {
+			case (con: SimpyPacketConnectionProtocol, str: ByteArrayInputStream) =>
+				val parser = new SAXDocumentParser
+				val fac = new NoBindingFactoryAdapter
+		
+				parser.setContentHandler(fac)
+				try {
+					parser.parse(str)
+				} catch {
+				case x: Exception => x.printStackTrace
+				}
+				dispatch(peerConnections(con), fac.rootElem)
+			}
+		}
+	}
 
 	def publicKey = keyPair.getPublic
 
@@ -34,17 +53,23 @@ class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	///////////////////////////
 	// SimpyPacketPeerProtocol
 	///////////////////////////
+//	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, length: Int) {
+//		val parser = new SAXDocumentParser
+//		val fac = new NoBindingFactoryAdapter
+//
+//		parser.setContentHandler(fac)
+//		try {
+//			parser.parse(new ByteArrayInputStream(bytes, offset, length))
+//		} catch {
+//			case x: Exception => x.printStackTrace
+//		}
+//		dispatch(peerConnections(con), fac.rootElem)
+//	}
 	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, length: Int) {
-		val parser = new SAXDocumentParser
-		val fac = new NoBindingFactoryAdapter
-
-		parser.setContentHandler(fac)
-		try {
-			parser.parse(new ByteArrayInputStream(bytes, offset, length))
-		} catch {
-			case x: Exception => x.printStackTrace
-		}
-		dispatch(peerConnections(con), fac.rootElem)
+		receiveInput(con, bytes.slice(offset, offset + length))
+	}
+	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte]) {
+		inputActor ! (con, new ByteArrayInputStream(bytes))
 	}
 
 	///////////////////////////

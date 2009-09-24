@@ -5,8 +5,8 @@
 
 package xus.comm
 
-import scala.io.File
-import scala.io.Directory
+import scala.tools.nsc.io.File
+import scala.tools.nsc.io.Directory
 import java.security.KeyPair
 import java.security.KeyFactory
 import java.security.KeyStore

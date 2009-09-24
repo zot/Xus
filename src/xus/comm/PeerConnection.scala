@@ -16,7 +16,7 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 /**
  * A connection to another peer
  */
-class PeerConnection(implicit con: SimpyPacketConnectionProtocol) extends PeerConnectionProtocol {
+class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends PeerConnectionProtocol {
 	import Util._
 
 	var peerId = 0

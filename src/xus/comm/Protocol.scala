@@ -101,6 +101,7 @@ class Message {
 	def intOpt(att: String)(implicit n: Node): Option[Int] = stringOpt(att)(n).map(Integer.parseInt(_))
 	def msgId = int("msgid")
 	override def toString = getClass.getSimpleName + ": " + node
+	def payload = node.child
 }
 class Challenge extends Message {
 	def token = string("token")

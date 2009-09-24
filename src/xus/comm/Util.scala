@@ -16,6 +16,9 @@ import scala.xml.Utility
 import scala.xml.MetaData
 import scala.xml.EntityRef
 import scala.xml.Comment
+import scala.actors.Exit
+import scala.actors.Actor
+import scala.actors.Actor._
 import java.io.Closeable
 import java.io.ByteArrayOutputStream
 import java.util.HashMap
@@ -28,6 +31,14 @@ import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
 
 class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "", null, TopScope) {}
 object Util {
+	val actorExceptions = actor {
+		self.trapExit = true
+		loop {
+			react {
+			case Exit(from: Actor, ex: Exception) => ex.printStackTrace
+			}
+		}
+	}
 	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionProtocol) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	def str(i: Int) = i.toString
 	def attrString(node: Node, attr: String) = {
