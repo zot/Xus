@@ -20,6 +20,7 @@ import Util._
 
 class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	var keyPair: KeyPair = null
+	var peerId: BigInt = BigInt(0)
 	var prefsDirectory: Directory = null
 	val peerConnections = Map[SimpyPacketConnectionProtocol, PeerConnection]()
 	val topicsOwned = Map[(Int,Int), Topic]()
@@ -45,7 +46,12 @@ class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 	}
 
 	def publicKey = keyPair.getPublic
-
+	def publicKeyString = stringFor(publicKey.getEncoded)
+	def genId {
+		keyPair = genKeyPair
+		peerId = digestInt(publicKey.getEncoded)
+		selfConnection.setKey(publicKey.getEncoded)
+	}
 	def addConnection(con: SimpyPacketConnectionProtocol) = {
 		peerConnections(con) = new PeerConnection()(con)
 		con

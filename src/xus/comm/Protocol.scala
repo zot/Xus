@@ -40,7 +40,7 @@ trait SimpyPacketConnectionProtocol {
  * TopicConnection is a layer 2 connection to a peer
  */
 trait PeerConnectionProtocol {
-	def peerId: Int
+	def peerId: BigInt
 	def peerKey: PublicKey
 
 	// low level protocol
@@ -70,10 +70,10 @@ trait PeerConnectionProtocol {
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
-	def sendBroadcast(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendUnicast(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendDHT(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendDelegatedDirect(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int): Unit
+	def sendBroadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
+	def sendUnicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
+	def sendDHT(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
+	def sendDelegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
 }
 trait SimpyPacketPeerProtocol {
 	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, length: Int): Unit
@@ -99,6 +99,7 @@ class Message {
 	}
 	def int(att: String)(implicit n: Node) = Integer.parseInt(string(att)(n))
 	def intOpt(att: String)(implicit n: Node): Option[Int] = stringOpt(att)(n).map(Integer.parseInt(_))
+	def bigInt(att: String)(implicit n: Node) = BigInt(bytesFor(string(att)(n)))
 	def msgId = int("msgid")
 	override def toString = getClass.getSimpleName + ": " + node
 	def payload = node.child
@@ -126,7 +127,7 @@ class Broadcast extends PeerToSpaceMessage
 class Unicast extends PeerToSpaceMessage
 class DelegateDirect extends PeerToSpaceMessage
 class SpaceToPeerMessage extends TopicSpaceMessage {
-	def sender = int("sender")
+	def sender = bigInt("sender")
 }
 class DelegatedDirect extends SpaceToPeerMessage
 class DelegatedDHT extends SpaceToPeerMessage
@@ -154,6 +155,7 @@ trait PeerTrait {
 	import PeerTrait._
 
 	def publicKey: PublicKey
+	def peerId: BigInt
 
 	//
 	// peer-to-peer messages

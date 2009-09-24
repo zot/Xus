@@ -19,10 +19,14 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends PeerConnectionProtocol {
 	import Util._
 
-	var peerId = 0
-	var peerKey = null
+	var peerId = BigInt(0)
+	var peerKey: PublicKey = null
 	var authenticated = false
 
+	def setKey(bytes: Array[Byte]) {
+		peerKey = publicKeyFor(bytes)
+		peerId = digestInt(bytes)
+	}
 	//
 	// peer-to-peer messages
 	//
@@ -60,16 +64,16 @@ class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends Pe
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
-	def sendBroadcast(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int) =
+	def sendBroadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
 		send(<delegated-broadcast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-broadcast>)
 
-	def sendUnicast(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int) =
+	def sendUnicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
 		send(<delegated-unicast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-unicast>)
 
-	def sendDHT(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int) =
+	def sendDHT(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
 		send(<delegated-dht sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-dht>)
 
-	def sendDelegatedDirect(sender: Int, space: Int, topic: Int,  message: Any, msgId: Int) =
+	def sendDelegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
 		send(<delegated-direct sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-direct>)
 
 	//

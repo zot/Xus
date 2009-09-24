@@ -24,6 +24,9 @@ object Acceptor {
 			}
 		}
 	}
+	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
+		peer.addConnection(newCon)
+	}
 	def listen(port: Int, peer: SimpyPacketPeerProtocol): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
 	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
 		val sock = ServerSocketChannel.open

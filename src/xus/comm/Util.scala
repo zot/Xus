@@ -19,6 +19,7 @@ import scala.xml.Comment
 import scala.actors.Exit
 import scala.actors.Actor
 import scala.actors.Actor._
+import scala.collection.immutable.Stream
 import java.io.Closeable
 import java.io.ByteArrayOutputStream
 import java.util.HashMap
@@ -31,6 +32,7 @@ import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
 
 class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "", null, TopScope) {}
 object Util {
+	val digest = MessageDigest.getInstance("SHA1")
 	val actorExceptions = actor {
 		self.trapExit = true
 		loop {
@@ -40,7 +42,8 @@ object Util {
 		}
 	}
 	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionProtocol) = (if (id == -1) con.nextOutgoingMsgId else id).toString
-	def str(i: Int) = i.toString
+	def str(o: Any) = o.toString
+	def str(o: BigInt) = stringFor(o.toByteArray)
 	def attrString(node: Node, attr: String) = {
 		val v = node.attributes(attr)
 
@@ -96,7 +99,6 @@ object Util {
 		serialize(node, serializer)
 		serializer.endDocument();
 	}
-	def getKeyPair = KeyPairGenerator.getInstance("RSA").genKeyPair
 	implicit def happyCloseable[T <: Closeable](stream: T) = new {
 		def closeAfter(block: (T) => Any) {
 			try {
@@ -106,6 +108,7 @@ object Util {
 			}
 		}
 	}
+	def genKeyPair = KeyPairGenerator.getInstance("RSA").genKeyPair
 	def sign(key: PrivateKey, bytes: Array[Byte]) = {
 		val sig = Signature.getInstance("SHA1withRSA")
 
@@ -113,13 +116,19 @@ object Util {
 		sig.update(bytes)
 		sig.sign
 	}
+	def publicKeyFor(bytes: Array[Byte]) = new sun.security.rsa.RSAPublicKeyImpl(bytes)
 	def stringFor(bytes: Array[Byte]) = {
 		val out = new StringBuffer
 
 		(new BASE64EncodingAlgorithm).convertToCharacters(bytes, 0, bytes.length, out)
 		out.toString
 	}
-	def bytesFor(str: String) = {
-		(new BASE64EncodingAlgorithm).convertFromCharacters(str.toCharArray, 0, str.length)
+	def bytesFor(str: String) = (new BASE64EncodingAlgorithm).convertFromCharacters(str.toCharArray, 0, str.length).asInstanceOf[Array[Byte]]
+	def hexForBytes(bytes: Array[Byte]) = bytes.map("%02X".format(_)).mkString
+	def bytesForHex(str: String) = (for (i <- 0 until str.length by 2) yield java.lang.Byte.parseByte(str.slice(i, i + 2), 16)).toArray[Byte]
+	def digestInt(bytes: Array[Byte]) = {
+		val i = BigInt(digest.digest(bytes))
+		digest.reset
+		i
 	}
 }

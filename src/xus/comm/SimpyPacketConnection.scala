@@ -236,7 +236,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 	def getSize = {
 		val bytes = partialInput.bytes
 
-		(bytes(3) << 24) | (bytes(2) << 16) | (bytes(1) << 8) | bytes(0)
+		((bytes(3) & 0xff) << 24) | ((bytes(2) & 0xff) << 16) | ((bytes(1) & 0xff) << 8) | (bytes(0) & 0xff)
 	}
 	override def handle(key: SelectionKey) = {
 		if (key.isReadable) {

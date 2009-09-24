@@ -461,7 +461,26 @@ class Id(material: Array[Int]) {
 //	    }
 //  }
 	
-	
+	/**
+	 * Returns a string representation of the Id in base 16. The string is a byte string from most to
+	 * least significant.
+	 * 
+	 * This was updated by Jeff because it was becomming a performance bottleneck.
+	 *
+	 * @return A String representation of this Id, abbreviated
+	 */
+	override def toString = {
+		val buffer = new StringBuffer();
+
+		buffer.append("<0x");
+		val n = IdBitLength / 4;
+		for (i <- n - 1 to n - 6 by -1) {
+			buffer.append(tran(getDigit(i, 4)));
+		}
+		buffer.append("..>");
+		buffer.toString
+	}
+
 	/*******
 	/*******
 	/******* END OF CONVERTED CODE
@@ -583,28 +602,6 @@ class Id(material: Array[Int]) {
       return ind;
     }
     return ind / base;
-  }
-
-
-  /**
-   * Returns a string representation of the Id in base 16. The string is a byte string from most to
-   * least significant.
-   * 
-   * This was updated by Jeff because it was becomming a performance bottleneck.
-   *
-   * @return A String representation of this Id, abbreviated
-   */
-  public String toString() {
-    StringBuffer buffer = new StringBuffer();
-    buffer.append("<0x");
-    
-    int n = IdBitLength / 4;
-    for (int i = n-1; i >= n-6; i--) 
-      buffer.append(tran[getDigit(i, 4)]);
-    
-    buffer.append("..>");
-    
-    return buffer.toString();
   }
 
   /**
