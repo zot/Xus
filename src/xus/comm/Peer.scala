@@ -19,6 +19,7 @@ import scala.actors.Actor._
 import Util._
 
 class Peer extends PeerTrait with SimpyPacketPeerProtocol {
+	val waiters = Map[Int, (Response) => Any]()
 	var keyPair: KeyPair = null
 	var peerId: BigInt = BigInt(0)
 	var prefsDirectory: Directory = null
@@ -45,6 +46,16 @@ class Peer extends PeerTrait with SimpyPacketPeerProtocol {
 		}
 	}
 
+	override def onResponseDo[M <: Message](msg: M)(block: (Response) => Any): M = {
+		waiters(msg.msgId) = block
+		msg
+	}
+	def receiving[M <: Message](msg: M): M = {
+		if (msg.isInstanceOf[Response]) {
+			waiters.remove(msg.msgId).foreach(_(msg.asInstanceOf[Response]))
+		}
+		msg
+	}
 	def publicKey = keyPair.getPublic
 	def publicKeyString = stringFor(publicKey.getEncoded)
 	def genId {

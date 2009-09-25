@@ -64,7 +64,7 @@ object IM extends Peer {
 		peerCon.setKey(bytesFor(pubKey))
 		if (isServer) {
 			println("peer joined space: " + space + ", topic: " + topic + ", id: " + str(peerCon.peerId));
-			topicsOwned((msg.int("space")(joinReq), msg.int("topic")(joinReq))).members.add(msg.con)
+			topicsOwned((msg.int("space")(joinReq), msg.int("topic")(joinReq))).addMember(peerCon)
 			peerCon.sendDirect(0, 0, <welcome space={space.toString} topic={topic.toString} pubKey={publicKeyString}/>)
 		} else {
 			println("connected to space: " + str(peerCon.peerId));
@@ -78,7 +78,7 @@ object IM extends Peer {
 		val chatTopic = new ChatTopic(0, 1)
 		topicsOwned((0, 1)) = chatTopic
 		topicsJoined((0, 1)) = chatTopic
-		chatTopic.members.add(selfConnection)
+		chatTopic.addMember(selfConnection)
 		con = selfConnection.con
 		Acceptor.listen(port, this)
 	}

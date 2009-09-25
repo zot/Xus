@@ -32,6 +32,7 @@ import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
 
 class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "", null, TopScope) {}
 object Util {
+	val rand = new java.util.Random
 	val digest = MessageDigest.getInstance("SHA1")
 	val actorExceptions = actor {
 		self.trapExit = true
@@ -41,6 +42,8 @@ object Util {
 			}
 		}
 	}
+
+	def nextInt(range: Int) = rand.nextInt(range)
 	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionProtocol) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	def str(o: Any) = o.toString
 	def str(o: BigInt) = stringFor(o.toByteArray)

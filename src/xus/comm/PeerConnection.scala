@@ -31,50 +31,50 @@ class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends Pe
 	// peer-to-peer messages
 	//
 	// request: challenge, response: challengeResponse
-	def sendChallenge(token: String, msgId: Int = -1) = send(<challenge token={token} msgId={msgIdFor(msgId)}/>)
+	def sendChallenge(token: String, msgId: Int = -1) = send(new Challenge, <challenge token={token} msgId={msgIdFor(msgId)}/>)
 
 	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1) =
-		send(sign(<challenge-response peerid={publicKeyString} token={token} requestId={str(requestId)} msgId={msgIdFor(msgId)}/>))
+		send(new ChallengeResponse, sign(<challenge-response peerid={publicKeyString} token={token} requestId={str(requestId)} msgId={msgIdFor(msgId)}/>))
 
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
 	def sendDirect(space: Int, topic: Int, message: Any, msgId: Int = -1) =
-		send(<direct space={str(space)} topic={str(topic)} msgId={msgIdFor(msgId)}>{message}</direct>)
+		send(new Direct, <direct space={str(space)} topic={str(topic)} msgId={msgIdFor(msgId)}>{message}</direct>)
 
-	def sendCompleted(requestId: Int, msgId: Int = -1) = send(<completed requestId={str(requestId)} msgId={msgIdFor(msgId)}/>)
+	def sendCompleted(requestId: Int, message: Any, msgId: Int = -1) = send(new Completed, <completed requestId={str(requestId)} msgId={msgIdFor(msgId)}>{message}</completed>)
 
-	def sendFailed(requestId: Int, msgId: Int = -1) = send(<failed requestId={str(requestId)} msgId={msgIdFor(msgId)}/>)
+	def sendFailed(requestId: Int, message: Any, msgId: Int = -1) = send(new Failed, <failed requestId={str(requestId)} msgId={msgIdFor(msgId)}>{message}</failed>)
 
 	//
 	// peer-to-space messages
 	//
 	def sendBroadcast(space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(<broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</broadcast>)
+		send(new Broadcast, <broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</broadcast>)
 
 	def sendUnicast(space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(<unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</unicast>)
+		send(new Unicast, <unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</unicast>)
 
-	def sendDHT(space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(<dht space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</dht>)
+	def sendDHT(space: Int, topic: Int, key: BigInt, message: Any, msgId: Int = -1) =
+		send(new DHT, <dht space={str(space)} topic={str(topic)} key={str(key)} msgid={msgIdFor(msgId)}>{message}</dht>)
 
 	def sendDelegate(peer: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(<delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegate>)
+		send(new DelegateDirect, <delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegate>)
 	
 	//
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
 	def sendBroadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(<delegated-broadcast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-broadcast>)
+		send(new DelegatedBroadcast, <delegated-broadcast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-broadcast>)
 
 	def sendUnicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(<delegated-unicast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-unicast>)
+		send(new DelegatedUnicast, <delegated-unicast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-unicast>)
 
-	def sendDHT(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(<delegated-dht sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-dht>)
+	def sendDHT(sender: BigInt, space: Int, topic: Int, key: BigInt, message: Any, msgId: Int) =
+		send(new DelegatedDHT, <delegated-dht sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-dht>)
 
 	def sendDelegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(<delegated-direct sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-direct>)
+		send(new DelegatedDirect, <delegated-direct sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-direct>)
 
 	//
 	// implementation
@@ -85,10 +85,11 @@ class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends Pe
 		def byteArray = buf
 	}
 
-	def send(node: Node) {
+	def send[M <: Message](msg: M, node: Node): M = {
 		serialize(node, bytes)
 		con.send(bytes.byteArray, 0, bytes.size)
 		bytes.reset
+		msg.set(null, node)
 	}
 	def sign(node: Node) = <signature sig="{stringFor(sign(keyPair.getPrivate, node.toString.toByteArray))}">{node}</signature>
 	def publicKeyString = ""

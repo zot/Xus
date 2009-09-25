@@ -5,24 +5,54 @@
 
 package xus.comm
 
+import scala.util.Sorting
 import scala.collection.mutable.Set
+import Protocol._
+import Util._
 
-class Topic(val space: Int, val topic: Int, val peer: Peer) {
-	val members = Set[PeerConnectionProtocol]()
+class Topic(val space: Int, val topic: Int, val peer: PeerTrait) {
+	var members = Array[PeerConnectionProtocol]()
 
+	//api
+	def addMember(con: PeerConnectionProtocol) {
+		val newArray = new Array[PeerConnectionProtocol](members.length + 1)
+
+		println("Topic adding peer: " + str(peer.peerId))
+		newArray(0) = con
+		members.copyToArray(newArray, 1)
+		Sorting.quickSort(newArray)
+		members = newArray
+		println("Members of space " + space + ", topic " + topic)
+		members.foreach(p => println(str(p.peerId)))
+	}
 	def process(broadcast: Broadcast) =
 		members.foreach(_.sendBroadcast(broadcast.sender, broadcast.space, broadcast.topic, broadcast.node.child, broadcast.msgId))
-	def process(unicast: Unicast) =
-		members.foreach(_.sendUnicast(unicast.sender, unicast.space, unicast.topic, unicast.node.child, unicast.msgId))
-	def process(dht: DHT) =
-		members.foreach(_.sendDHT(dht.sender, dht.space, dht.topic, dht.node.child, dht.msgId))
-	def process(delegate: DelegateDirect) =
-		members.foreach(_.sendDelegatedDirect(delegate.sender, delegate.space, delegate.topic, delegate.node.child, delegate.msgId))
+	def process(unicast: Unicast) = delegateResponse(members(nextInt(members.length)).sendUnicast(unicast.sender, unicast.space, unicast.topic, unicast.node.child, unicast.msgId))
+	def process(dht: DHT) = delegateResponse(findDht(dht).sendDHT(dht.sender, dht.space, dht.topic, dht.key, dht.node.child, dht.msgId))
+	def process(delegate: DelegateDirect) = {
+		members.find(_.peerId == delegate.receiver) match {
+		case Some(con) => delegateResponse(con.sendDelegatedDirect(delegate.sender, delegate.space, delegate.topic, delegate.node.child, delegate.msgId))
+		case None => delegate.con.sendFailed(delegate.msgId, ())
+		}
+	}
+	//hooks
 	def receive(msg: DelegatedBroadcast) = basicReceive(msg)
 	def receive(msg: DelegatedUnicast) = basicReceive(msg)
 	def receive(msg: DelegatedDHT) = basicReceive(msg)
 	def receive(msg: DelegatedDirect) = basicReceive(msg)
 	def basicReceive(msg: SpaceToPeerMessage) {}
+	// utils
+	def delegateResponse(msg: Message) = peer.onResponseDo(msg)(peer.delegateResponse(msg, _))
+	def findDht(dht: DHT) = {
+		val key = dht.key
+
+		members.foldLeft((members.head,members.head.peerId.abs + members.last.peerId.abs)) {
+		case ((member, distance), cur) =>
+			val dist = (cur.peerId - key).abs;
+
+			if (dist < distance) (cur, dist) else (member, distance)
+		}._1
+	}
 }
 
 trait TopicManagement {

@@ -25,6 +25,10 @@ object Protocol {
 	val DELEGATED_UNICAST = "delegated-unicast"
 	val DELEGATED_DIRECT = "delegated-direct"
 	val DELEGATED_DHT = "delegated-dht"
+
+	implicit object PeerConnectionOrdering extends Ordering[PeerConnectionProtocol] {
+		def compare(a: PeerConnectionProtocol, b: PeerConnectionProtocol) = a.peerId.compareTo(b.peerId)
+	}
 }
 
 /**
@@ -44,36 +48,40 @@ trait PeerConnectionProtocol {
 	def peerKey: PublicKey
 
 	// low level protocol
-	def send(node: Node): Unit
+	def send[M <: Message](msg: M, node: Node): M
 
 	//
 	// peer-to-peer messages
 	//
 	// request: challenge, response: challengeResponse
-	def sendChallenge(token: String, msgId: Int = -1): Unit
-	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1): Unit
+	def sendChallenge(token: String, msgId: Int = -1): Challenge
+	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1): ChallengeResponse
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def sendDirect(topicSpace: Int, topic: Int, message: Any, msgId: Int = -1): Unit
-	def sendCompleted(requestId: Int, msgId: Int = -1): Unit
-	def sendFailed(requestId: Int, msgId: Int = -1): Unit
+	// they return the msgId
+	//
+	def sendDirect(topicSpace: Int, topic: Int, message: Any, msgId: Int = -1): Direct
+	def sendCompleted(requestId: Int, message: Any, msgId: Int = -1): Completed
+	def sendFailed(requestId: Int, message: Any, msgId: Int = -1): Failed
 
 	//
 	// peer-to-space messages
+	// they return the msgId
 	//
-	def sendBroadcast(space: Int, topic: Int,  message: Any, msgId: Int = -1): Unit
-	def sendUnicast(space: Int, topic: Int,  message: Any, msgId: Int = -1): Unit
-	def sendDHT(space: Int, topic: Int,  message: Any, msgId: Int = -1): Unit
-	def sendDelegate(peer: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1): Unit
-	
+	def sendBroadcast(space: Int, topic: Int,  message: Any, msgId: Int = -1): Broadcast
+	def sendUnicast(space: Int, topic: Int,  message: Any, msgId: Int = -1): Unicast
+	def sendDHT(space: Int, topic: Int,  key: BigInt, message: Any, msgId: Int = -1): DHT
+	def sendDelegate(peer: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1): DelegateDirect
+
 	//
 	// space-to-peer messages
 	// these are delegated from other peers
+	// they return the msgId
 	//
-	def sendBroadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendUnicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendDHT(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
-	def sendDelegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): Unit
+	def sendBroadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): DelegatedBroadcast
+	def sendUnicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): DelegatedUnicast
+	def sendDHT(sender: BigInt, space: Int, topic: Int, key: BigInt, message: Any, msgId: Int): DelegatedDHT
+	def sendDelegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int): DelegatedDirect
 }
 trait SimpyPacketPeerProtocol {
 	def receiveInput(con: SimpyPacketConnectionProtocol, bytes: Array[Byte], offset: Int, length: Int): Unit
@@ -104,15 +112,20 @@ class Message {
 	override def toString = getClass.getSimpleName + ": " + node
 	def payload = node.child
 }
+class PeerToPeerMessage extends Message
+class Response extends Message {
+	def requestId = int("requestid")
+}
 class Challenge extends Message {
 	def token = string("token")
 }
-class ChallengeResponse extends Message {
+class ChallengeResponse extends Response {
 	def responseNode = (node \ "challenge-response")(0)
 	def token = attrString(responseNode, "token")
 }
-class Completed extends Message
-class Failed extends Message
+class Completed extends Response
+class Failed extends Response
+class Direct extends PeerToPeerMessage
 class TopicSpaceMessage extends Message {
 	def space = int("space")
 	def topic = int("topic")
@@ -121,11 +134,14 @@ class TopicSpaceMessage extends Message {
 class PeerToSpaceMessage extends TopicSpaceMessage {
 	def sender = con.peerId
 }
-class Direct extends PeerToSpaceMessage
-class DHT extends PeerToSpaceMessage
+class DHT extends PeerToSpaceMessage {
+	def key = bigInt("key")
+}
 class Broadcast extends PeerToSpaceMessage
 class Unicast extends PeerToSpaceMessage
-class DelegateDirect extends PeerToSpaceMessage
+class DelegateDirect extends PeerToSpaceMessage {
+	def receiver = bigInt("receiver")
+}
 class SpaceToPeerMessage extends TopicSpaceMessage {
 	def sender = bigInt("sender")
 }
@@ -135,6 +151,12 @@ class DelegatedBroadcast extends SpaceToPeerMessage
 class DelegatedUnicast extends SpaceToPeerMessage
 
 object PeerTrait {
+	def prep[M <: Message](msg: M, con: PeerConnectionProtocol, node: Node, peer: PeerTrait) = {
+		msg.set(con, node);
+		peer.receiving(msg);
+		msg
+	}
+
 	val dispatchers = Map(
 	"challenge" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new Challenge().set(con, node))},
 	"challenge-response" -> {(con: PeerConnectionProtocol, node: Node, peer: PeerTrait) => peer.receive(new ChallengeResponse().set(con, node))},
@@ -157,6 +179,12 @@ trait PeerTrait {
 	def publicKey: PublicKey
 	def peerId: BigInt
 
+	def onResponseDo[M <: Message](msg: M)(block: (Response) => Any): M
+	def receiving[M <: Message](msg: M): M
+	def delegateResponse(msg: Message, response: Response) = response match {
+	case succeed: Completed => msg.con.sendCompleted(succeed.requestId, succeed.payload)
+	case fail: Failed => msg.con.sendFailed(fail.requestId, fail.payload)
+	}
 	//
 	// peer-to-peer messages
 	//

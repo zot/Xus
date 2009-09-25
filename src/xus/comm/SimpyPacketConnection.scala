@@ -209,9 +209,10 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 		}
 	}
 	def processInput {
-		if (partialInput.size > 4) {
+		val totalInput = partialInput.size
+
+		if (totalInput > 4) {
 			val size = getSize
-			val totalInput = partialInput.size
 
 			if (size + 4 <= totalInput) {
 				val bytes = partialInput.bytes
