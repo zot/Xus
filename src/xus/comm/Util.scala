@@ -18,6 +18,7 @@ import scala.xml.EntityRef
 import scala.xml.Comment
 import scala.actors.Exit
 import scala.actors.Actor
+import scala.actors.DaemonActor
 import scala.actors.Actor._
 import scala.collection.immutable.Stream
 import java.io.Closeable
@@ -32,6 +33,12 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 import com.sun.xml.internal.org.jvnet.fastinfoset.EncodingAlgorithmIndexes
 import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
 
+object Xus {
+	def shutdown {
+		Util.actorExceptions ! 0
+		Connection.shutdown
+	}
+}
 class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "", null, TopScope) {}
 object Util {
 	val rand = new java.util.Random
@@ -41,6 +48,7 @@ object Util {
 		loop {
 			react {
 			case Exit(from: Actor, ex: Exception) => ex.printStackTrace
+			case 0 => exit
 			}
 		}
 	}
@@ -140,5 +148,13 @@ object Util {
 		val i = BigInt(digest.digest(bytes))
 		digest.reset
 		i
+	}
+	def daemonActor(body: => Unit): Actor = {
+		val a = new DaemonActor {
+			def act() = body
+//			override final val scheduler: IScheduler = Actor.parentScheduler
+		}
+		a.start()
+		a
 	}
 }

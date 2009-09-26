@@ -6,6 +6,7 @@ import scala.collection.mutable.ArrayStack
 import scala.collection.mutable.{Map => MMap}
 import scala.actors.Actor._
 import scala.actors.TIMEOUT
+import Util._
 
 object Connection {
 	val buffers = new ArrayStack[ByteBuffer]
@@ -18,8 +19,11 @@ object Connection {
 		loop {
 			receiveWithin(if (selector.keys.isEmpty) 1000 else 1) {
 			case con: Connection[_] =>
-			con.register 
-			connections(con.chan) = con
+				con.register 
+				connections(con.chan) = con
+			case 0 =>
+				selector.close
+				exit
 			case TIMEOUT =>
 			case other =>
 			}
@@ -39,6 +43,10 @@ object Connection {
 		}
 	}
 
+	def shutdown {
+		selectorThread ! 0
+		try {selector.wakeup} catch {case _ => }
+	}
 	def guard(block: => Unit) {
 		try {
 			block

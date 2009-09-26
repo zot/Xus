@@ -11,6 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.channels._
 import scala.actors.Actor._
 import scala.collection.mutable.ArrayBuffer
+import Util._
 
 /**
  * SimpyPacketConnection is a layer 1 connection to a peer
@@ -73,7 +74,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 			count = newSize
 		}
 	}
-	val outputActor = actor {
+	val outputActor = daemonActor {
 		self link Util.actorExceptions
 		loop {
 			react {
@@ -85,7 +86,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 			}
 		}
 	}
-	val inputActor = actor {
+	val inputActor = daemonActor {
 		self link Util.actorExceptions
 		loop {
 			react {
@@ -137,13 +138,22 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 		}
 	}
 	def readInput {
-		chan.read(input) match {
-		case -1 => outputActor ! 0
-		case 0 =>
-		case _ => 
-			partialInput.write(input.array, 0, input.position)
-			input.clear
-			processInput
+		try {
+			var last = 1
+			
+			while (last > 0) {
+				last = chan.read(input)
+				last match {
+				case -1 => close
+				case 0 =>
+				case _ => 
+					partialInput.write(input.array, 0, input.position)
+					input.clear
+					processInput
+				}
+			}
+		} catch {
+		case _: java.nio.channels.ClosedChannelException => close
 		}
 	}
 	override def close {
@@ -162,6 +172,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 			}
 			peer.closed(this)
 		}
+		exit
 	}
 	def processInput {
 		val totalInput = partialInput.size

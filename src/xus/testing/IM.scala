@@ -46,7 +46,14 @@ object IM extends Peer {
 	}
 
 	def main(args: Array[String]) {
-		genId
+		if (args.length == 1 || args(1) != "clean") {
+			val file = new java.io.File("/tmp/" + args(0) + ".props")
+
+			readStorage(file)
+			if (!file.exists) {
+				genId
+			}
+		}
 		println("my peer id: " + str(peerId));
 		if (args(0) == "server") {
 			server(Integer.parseInt(args(1)))

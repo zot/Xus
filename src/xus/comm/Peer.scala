@@ -59,7 +59,7 @@ class Peer extends SimpyPacketPeerAPI {
 	val topicsOwned = Map[(Int,Int), Topic]()
 	val topicsJoined = Map[(Int,Int), Topic]()
 	val selfConnection = peerConnections(addConnection(new DirectSimpyPacketConnection(this)))
-	val inputActor = actor {
+	val inputActor = daemonActor {
 		loop {
 			react {
 			case (con: SimpyPacketConnectionAPI, str: ByteArrayInputStream) =>
@@ -73,10 +73,14 @@ class Peer extends SimpyPacketPeerAPI {
 				case x: Exception => x.printStackTrace
 				}
 				dispatch(peerConnections(con), fac.rootElem)
+			case 0 => exit
 			}
 		}
 	}
 
+	def shutdown {
+		inputActor ! 0
+	}
 	def onResponseDo[M <: Message](msg: M)(block: (Response) => Any): M = {
 		waiters(msg.msgId) = block
 		msg
@@ -91,11 +95,7 @@ class Peer extends SimpyPacketPeerAPI {
 		msg
 	}
 	def publicKeyString = stringFor(publicKey.getEncoded)
-	def genId {
-		keyPair = genKeyPair
-		peerId = digestInt(publicKey.getEncoded)
-		selfConnection.setKey(publicKey.getEncoded)
-	}
+	def genId = {keyPair = genKeyPair; this}
 	def addConnection(con: SimpyPacketConnectionAPI) = {
 		peerConnections(con) = new PeerConnection()(con)
 		con
@@ -111,6 +111,8 @@ class Peer extends SimpyPacketPeerAPI {
 	def keyPair = myKeyPair
 	def keyPair_=(kp: KeyPair) {
 		myKeyPair = kp
+		peerId = digestInt(publicKey.getEncoded)
+		selfConnection.setKey(publicKey.getEncoded)
 		storePrefs
 	}
 	def delegateResponse(msg: Message, response: Response) = response match {
@@ -147,7 +149,10 @@ class Peer extends SimpyPacketPeerAPI {
 	// peer-to-peer messages
 	//
 	def verifySignature(msg: ChallengeResponse): Boolean = true
-	def receive(msg: Challenge) = msg.con.sendChallengeResponse(msg.token, publicKey, msg.msgId)
+	def receive(msg: Challenge) {
+		msg.con.sendChallengeResponse(msg.token, publicKey, msg.msgId)
+		basicReceive(msg)
+	}
 	def receive(msg: ChallengeResponse) = basicReceive(msg)
 	def receive(msg: Completed) = basicReceive(msg)
 	def receive(msg: Failed) = basicReceive(msg)
@@ -157,20 +162,44 @@ class Peer extends SimpyPacketPeerAPI {
 	// peer-to-space messages
 	//
 	// delegate broadcasting, etc to the topic
-	def receive(msg: Broadcast) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
-	def receive(msg: Unicast) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
-	def receive(msg: DHT) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
-	def receive(msg: DelegateDirect) = topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+	def receive(msg: Broadcast) {
+		topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: Unicast) {
+		topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: DHT) {
+		topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: DelegateDirect) {
+		topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		basicReceive(msg)
+	}
 
 	//
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
 	// delegate message reception handling to the topic
-	def receive(msg: DelegatedBroadcast) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
-	def receive(msg: DelegatedUnicast) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
-	def receive(msg: DelegatedDHT) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
-	def receive(msg: DelegatedDirect) = topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+	def receive(msg: DelegatedBroadcast) {
+		topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: DelegatedUnicast) {
+		topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: DelegatedDHT) {
+		topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+		basicReceive(msg)
+	}
+	def receive(msg: DelegatedDirect) {
+		topicsJoined.get(msg.space, msg.topic).foreach(_.receive(msg))
+		basicReceive(msg)
+	}
 
 	// catch-all
 	def basicReceive(msg: Message) {}
@@ -183,34 +212,56 @@ class Peer extends SimpyPacketPeerAPI {
 
 		prefs("public", true) = stringFor(keyPair.getPublic.getEncoded)
 		prefs("private", true) = stringFor(keyPair.getPrivate.getEncoded)
+		if (storage != null) {
+			println("writing public: " + prefs("public").value)
+			println("writing private: " + prefs("private").value)
+		}
 		storeProps("prefs")
 	}
-	def nodeForProps(p: Map[String,Property]) = {
+	def nodeForProps(name: String) = {
 		import scala.xml.NodeSeq._
-		<props>{
-			for ((_, prop) <- p filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
+		<props name={name}>{
+			for ((_, prop) <- props(name) filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
 				yield <prop name={prop.name} value={prop.value}/>
 		}</props>
 	}
-	def propNodeName(n: Node) = str(n.attribute("name"))
+	def strOpt(opt: Option[Seq[Node]]) = opt.map(_.mkString)
 	def readStorage(f: File) {
-		storage = new SetStorage(f)
-		storage.nodes foreach {n =>
-			val name = propNodeName(n)
+		storage = null
+		val str = new SetStorage(f)
+		str.nodes foreach {n =>
+			var pub = ""
+			var priv= ""
 
-			storedNodes(name) = n
-			if (name == "prefs") {
-				myKeyPair = new KeyPair(publicKeyFor(bytesFor(n.attribute("public").mkString)), privateKeyFor(bytesFor(n.attribute("private").mkString)))
+			for (name <- strOpt(n.attribute("name"))) {
+				storedNodes(name) = n
+				if (name == "prefs") {
+					for (child <- n.child) {
+						for (name <- strOpt(child.attribute("name"))) name match {
+						case "public" => for (key <- strOpt(child.attribute("value"))) {
+								pub = key
+								println("read public: " + pub)
+							}
+						case "private" => for (key <- strOpt(child.attribute("value"))) {
+								priv = key
+								println("read private: " + priv)
+							}
+						}
+					}
+					keyPair = new KeyPair(publicKeyFor(bytesFor(pub)), privateKeyFor(bytesFor(priv)))
+				}
 			}
 		}
+		storage = str
 	}
 	def storeProps(name: String) {
 		if (storage != null) {
-			val node = nodeForProps(props(name))
+			val node = nodeForProps(name)
 
 			storedNodes.get(name).foreach(storage -= _)
 			storedNodes(name) = node
 			storage += node
+			storage.flush
 		}
 	}
 }

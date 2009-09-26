@@ -56,7 +56,8 @@ class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerAPI) extend
 	}
 	def remove(con: SimpyPacketConnection) {
 		connections.remove(con.chan)
-		con.chan.keyFor(selector).cancel
+		val key = con.chan.keyFor(selector)
+		if (key != null) key.cancel
 	}
 	override def close {
 		serverChan.close
