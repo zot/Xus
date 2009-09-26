@@ -24,6 +24,8 @@ import java.io.Closeable
 import java.io.ByteArrayOutputStream
 import java.util.HashMap
 import java.security._
+import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.X509EncodedKeySpec
 import com.sun.xml.internal.fastinfoset.sax.AttributesHolder;
 import com.sun.xml.internal.fastinfoset.QualifiedName;
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
@@ -44,7 +46,7 @@ object Util {
 	}
 
 	def nextInt(range: Int) = rand.nextInt(range)
-	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionProtocol) = (if (id == -1) con.nextOutgoingMsgId else id).toString
+	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionAPI) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	def str(o: Any) = o.toString
 	def str(o: BigInt) = stringFor(o.toByteArray)
 	def attrString(node: Node, attr: String) = {
@@ -120,6 +122,11 @@ object Util {
 		sig.sign
 	}
 	def publicKeyFor(bytes: Array[Byte]) = new sun.security.rsa.RSAPublicKeyImpl(bytes)
+	def privateKeyFor(bytes: Array[Byte]) = sun.security.rsa.RSAPrivateCrtKeyImpl.newKey(bytes)
+	def publicKeySpecFor(fileBytes: Array[Byte]) = new X509EncodedKeySpec(fileBytes)
+	def privateKeySpecFor(fileBytes: Array[Byte]) = new PKCS8EncodedKeySpec(fileBytes)
+	def keySpecFor(key: PublicKey) = new X509EncodedKeySpec(key.getEncoded)
+	def keySpecFor(key: PrivateKey) = new PKCS8EncodedKeySpec(key.getEncoded)
 	def stringFor(bytes: Array[Byte]) = {
 		val out = new StringBuffer
 

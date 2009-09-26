@@ -16,7 +16,7 @@ object IM extends Peer {
 	import xus.comm.Util._
 
 	var isServer = false
-	var con: SimpyPacketConnectionProtocol = null
+	var con: SimpyPacketConnectionAPI = null
 	var frame = new MainFrame {
 		import javax.swing.KeyStroke
 		import javax.swing.text.JTextComponent

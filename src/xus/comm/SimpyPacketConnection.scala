@@ -7,90 +7,32 @@ package xus.comm
 
 import java.net._
 import java.io.ByteArrayOutputStream
-import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.nio.channels._
-import scala.actors.TIMEOUT
-import scala.actors.Exit
-import scala.actors.Actor
 import scala.actors.Actor._
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.ArrayStack
-import scala.collection.JavaConversions._
-import scala.collection.mutable.{Map => MMap}
 
-object Connection {
-	val buffers = new ArrayStack[ByteBuffer]
-	val BUFFER_SIZE = 1024 * 1024
-	val selector = Selector.open
-	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
-	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
-	val selectorThread = actor {
-		self link Util.actorExceptions
-		loop {
-			receiveWithin(if (selector.keys.isEmpty) 1000 else 1) {
-			case con: Connection[_] =>
-			con.register 
-			connections(con.chan) = con
-			case TIMEOUT =>
-			case other =>
-			}
-			if (!selector.keys.isEmpty) {
-				val count = selector.select()
-				val keys = selector.selectedKeys.iterator
-				
-				while (keys.hasNext) {
-					val k = keys.next
-					
-					keys.remove
-					if (k.isValid) {
-						connections(k.channel).handle(k)
-					}
-				}
-			}
-		}
-	}
-
-	def guard(block: => Unit) {
-		try {
-			block
-		} catch {
-			case ex: Exception => ex.printStackTrace
-		}
-	}
-	def queue(obj: Any) {
-		selectorThread ! obj
-		selector.wakeup
-	}
-	def newBuffer = {
-		buffers synchronized {
-			if (buffers.isEmpty) {
-				ByteBuffer.allocateDirect(BUFFER_SIZE)
-			} else {
-				buffers.pop
-			}
-		}
-	}
-	def release(buf: ByteBuffer) {
-		if (buf.capacity == BUFFER_SIZE) {
-			buf.clear
-			buffers synchronized {
-				buffers.push(buf)
-			}
-		}
-	}
-	def addConnection[T](newCon: T) = {
-		queue(newCon)
-		newCon
-	}
+/**
+ * SimpyPacketConnection is a layer 1 connection to a peer
+ */
+trait SimpyPacketConnectionAPI {
+	//outgoing message id starts at 0 and increments with each call
+	def nextOutgoingMsgId: Int
+	def send(bytes: Array[Byte], offset: Int, len: Int): Unit
+	def send(bytes: Array[Byte]) {send(bytes, 0, bytes.length)}
 }
+trait SimpyPacketPeerAPI {
+	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte], offset: Int, length: Int): Unit
+	def closed(con: SimpyPacketConnectionAPI)
+}
+
 object SimpyPacketConnection {
 	import Connection._
-
-	def apply(connection: SocketChannel, peer: SimpyPacketPeerProtocol, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
-	def apply(host: String, port: Int, peer: SimpyPacketPeerProtocol): SimpyPacketConnection = {
+	
+	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI): SimpyPacketConnection = {
 		val chan = SocketChannel.open
-
+		
 		chan.configureBlocking(false)
 		val con = addConnection(this(chan, peer, None))
 		chan.connect(new InetSocketAddress(host, port))
@@ -98,24 +40,33 @@ object SimpyPacketConnection {
 	}
 }
 
-abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
-	def register
+class DirectSimpyPacketConnection(peer: SimpyPacketPeerAPI, var otherEnd: DirectSimpyPacketConnection) extends SimpyPacketConnectionAPI {
+	var msgId = -1
 
-	def close {
-		chan.keyFor(Connection.selector).cancel
+	if (otherEnd == null) {
+		otherEnd = this
+	} else {
+		otherEnd.otherEnd = this
 	}
-	def handle(key: SelectionKey) = ()
+
+	def this(peer: SimpyPacketPeerAPI) = this(peer, null.asInstanceOf[DirectSimpyPacketConnection])
+	def this(peer: SimpyPacketPeerAPI, otherPeer: SimpyPacketPeerAPI) = this(peer, new DirectSimpyPacketConnection(otherPeer))
+	def nextOutgoingMsgId: Int = {
+		msgId += 1
+		msgId
+	}
+	def send(bytes: Array[Byte], offset: Int, len: Int) = otherEnd.receive(bytes, 0, bytes.length)
+	def receive(bytes: Array[Byte], offset: Int, len: Int) = peer.receiveInput(this, bytes, 0, bytes.length)
 }
-object foo {
-	var tot = 0
-}
-class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProtocol, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) with SimpyPacketConnectionProtocol {
+
+class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) with SimpyPacketConnectionAPI {
 	import Connection._
 	var msgId = -1
 	val outputLenBuf = new Array[Byte](4)
 	val inputLenBuf = new Array[Byte](4)
 	val output = new ArrayBuffer[ByteBuffer]
 	val input = ByteBuffer.allocate(BUFFER_SIZE)
+	var closed = false
 	val partialInput = new ByteArrayOutputStream {
 		def bytes = buf
 		def setSize(newSize: Int) {
@@ -200,12 +151,16 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerProt
 		super.close
 	}
 	def doClose {
-		inputActor ! 0
-		try {chan.socket.shutdownInput} catch {case _ =>}
-		try {chan.socket.shutdownOutput} catch {case _ =>}
-		try {chan.close} catch {case _ =>}
-		for (a <- optAcceptor) {
-			a.remove(this)
+		if (!closed) {
+			closed = true
+			inputActor ! 0
+			try {chan.socket.shutdownInput} catch {case _ =>}
+			try {chan.socket.shutdownOutput} catch {case _ =>}
+			try {chan.close} catch {case _ =>}
+			for (a <- optAcceptor) {
+				a.remove(this)
+			}
+			peer.closed(this)
 		}
 	}
 	def processInput {

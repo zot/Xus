@@ -16,7 +16,7 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 /**
  * A connection to another peer
  */
-class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends PeerConnectionProtocol {
+class PeerConnection(implicit val con: SimpyPacketConnectionAPI) {
 	import Util._
 
 	var peerId = BigInt(0)
@@ -85,6 +85,7 @@ class PeerConnection(implicit val con: SimpyPacketConnectionProtocol) extends Pe
 		def byteArray = buf
 	}
 
+	// low level protocol
 	def send[M <: Message](msg: M, node: Node): M = {
 		serialize(node, bytes)
 		con.send(bytes.byteArray, 0, bytes.size)

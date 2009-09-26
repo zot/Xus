@@ -12,7 +12,7 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable.{Map => MMap}
 
 object Acceptor {
-	def listenCustom(port: Int, peer: SimpyPacketPeerProtocol)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
+	def listenCustom(port: Int, peer: SimpyPacketPeerAPI)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
 		listen(port) {chan =>
 			new Acceptor(chan, peer) {
 				override def newConnection(connection: SocketChannel) = {
@@ -27,7 +27,7 @@ object Acceptor {
 	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
 		peer.addConnection(newCon)
 	}
-	def listen(port: Int, peer: SimpyPacketPeerProtocol): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
+	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
 	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
 		val sock = ServerSocketChannel.open
 
@@ -37,7 +37,7 @@ object Acceptor {
 	}
 }
 
-class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerProtocol) extends Connection[ServerSocketChannel](serverChan) {
+class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerAPI) extends Connection[ServerSocketChannel](serverChan) {
 	import Connection._
 
 	def newConnection(chan: SocketChannel) = SimpyPacketConnection(chan, peer, Some(this))

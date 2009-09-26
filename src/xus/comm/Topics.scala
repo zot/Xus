@@ -10,12 +10,12 @@ import scala.collection.mutable.Set
 import Protocol._
 import Util._
 
-class Topic(val space: Int, val topic: Int, val peer: PeerTrait) {
-	var members = Array[PeerConnectionProtocol]()
+class Topic(val space: Int, val topic: Int, val peer: Peer) {
+	var members = Array[PeerConnection]()
 
 	//api
-	def addMember(con: PeerConnectionProtocol) {
-		val newArray = new Array[PeerConnectionProtocol](members.length + 1)
+	def addMember(con: PeerConnection) {
+		val newArray = new Array[PeerConnection](members.length + 1)
 
 		println("Topic adding peer: " + str(peer.peerId))
 		newArray(0) = con
@@ -24,6 +24,9 @@ class Topic(val space: Int, val topic: Int, val peer: PeerTrait) {
 		members = newArray
 		println("Members of space " + space + ", topic " + topic)
 		members.foreach(p => println(str(p.peerId)))
+	}
+	def removeMember(con: PeerConnection) {
+		members = members.filter(_ != con)
 	}
 	def process(broadcast: Broadcast) =
 		members.foreach(_.sendBroadcast(broadcast.sender, broadcast.space, broadcast.topic, broadcast.node.child, broadcast.msgId))
