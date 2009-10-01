@@ -74,19 +74,20 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 			count = newSize
 		}
 	}
-	val outputActor = daemonActor {
+	val outputActor = daemonActor("Connection output") {
 		self link Util.actorExceptions
 		loop {
 			react {
 			case 1 => writeOutput
+			case newOutput: Array[Byte] => doSend(newOutput, 0, newOutput.length)
 			case (newOutput: Array[Byte], offset: Int, len: Int) => doSend(newOutput, offset, len)
 			case 0 => doClose
 			case _ if !chan.isOpen => doClose
-			case x => println("unhandled case: " + x)
+			case x => new Exception("unhandled case: " + x).printStackTrace
 			}
 		}
 	}
-	val inputActor = daemonActor {
+	val inputActor = daemonActor("Connection input") {
 		self link Util.actorExceptions
 		loop {
 			react {
@@ -105,7 +106,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 		chan.configureBlocking(false)
 		chan.register(selector, SelectionKey.OP_READ | /* SelectionKey.OP_WRITE | */ (if (optAcceptor == None) SelectionKey.OP_CONNECT else 0))
 	}
-	def send(newOutput: Array[Byte], offset: Int, len: Int) {outputActor ! (newOutput, offset, len)}
+	def send(newOutput: Array[Byte], offset: Int, len: Int) {outputActor ! newOutput.slice(offset, offset + len)}
 	def doSend(newOutput: Array[Byte], offset: Int, len: Int) {
 		if (output.isEmpty) {
 			output.append(newBuffer)
@@ -131,10 +132,14 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 	}
 	def writeOutput {
 		while (!output.isEmpty && output.last.remaining > 0) {
-			chan.write(output.toArray)
-			while (!output.isEmpty && output(0).remaining == 0) {
-				release(output.remove(0))
-			}
+//			if (chan.isConnected) {
+				chan.write(output.toArray)
+				while (!output.isEmpty && output(0).remaining == 0) {
+					release(output.remove(0))
+				}
+//			} else {
+//				Thread.sleep(100)
+//			}
 		}
 	}
 	def readInput {
@@ -149,9 +154,9 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 				case _ => 
 					partialInput.write(input.array, 0, input.position)
 					input.clear
-					processInput
 				}
 			}
+			processInput
 		} catch {
 		case _: java.nio.channels.ClosedChannelException => close
 		}
@@ -175,20 +180,19 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 		exit
 	}
 	def processInput {
-		val totalInput = partialInput.size
-
-		if (totalInput > 4) {
+		while (partialInput.size > 4) {
+			val totalInput = partialInput.size
 			val size = getSize
 
 			if (size + 4 <= totalInput) {
 				val bytes = partialInput.bytes
 
 				peer.receiveInput(this, bytes, 4, size)
-				if (totalInput > size + 4) {
+				if (size + 4 == totalInput) {
+					partialInput.reset
+				} else {
 					System.arraycopy(bytes, size + 4, bytes, 0, totalInput - size - 4)
 					partialInput.setSize(totalInput - size - 4)
-				} else {
-					partialInput.reset
 				}
 			}
 		}

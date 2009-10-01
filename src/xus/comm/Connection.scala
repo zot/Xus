@@ -14,37 +14,38 @@ object Connection {
 	val selector = Selector.open
 	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
 	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
-	val selectorThread = actor {
+	val selectorActor = daemonActor("Selector") {
 		self link Util.actorExceptions
 		loop {
-			receiveWithin(if (selector.keys.isEmpty) 1000 else 1) {
+			if (!selector.isOpen) exit
+			reactWithin(10) {
 			case con: Connection[_] =>
 				con.register 
 				connections(con.chan) = con
-			case 0 =>
-				selector.close
-				exit
-			case TIMEOUT =>
-			case other =>
-			}
-			if (!selector.keys.isEmpty) {
-				val count = selector.select()
-				val keys = selector.selectedKeys.iterator
-				
-				while (keys.hasNext) {
-					val k = keys.next
-					
-					keys.remove
-					if (k.isValid) {
-						connections(k.channel).handle(k)
-					}
-				}
+				handleSelects
+			case 0 => selector.close
+			case other => handleSelects
 			}
 		}
 	}
 
+	def handleSelects {
+		if (!selector.keys.isEmpty) {
+			val count = selector.select()
+			val keys = selector.selectedKeys.iterator
+
+			while (keys.hasNext) {
+				val k = keys.next
+						
+				keys.remove
+				if (k.isValid) {
+					connections(k.channel).handle(k)
+				}
+			}
+		}
+	}
 	def shutdown {
-		selectorThread ! 0
+		selectorActor ! 0
 		try {selector.wakeup} catch {case _ => }
 	}
 	def guard(block: => Unit) {
@@ -55,7 +56,7 @@ object Connection {
 		}
 	}
 	def queue(obj: Any) {
-		selectorThread ! obj
+		selectorActor ! obj
 		selector.wakeup
 	}
 	def newBuffer = {

@@ -43,18 +43,18 @@ class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "",
 object Util {
 	val rand = new java.util.Random
 	val digest = MessageDigest.getInstance("SHA1")
-	val actorExceptions = actor {
+	// variable so that apps can override this behavior 
+	var actorExceptions = daemonActor("Exception handler") {
 		self.trapExit = true
 		loop {
 			react {
-			case Exit(from: Actor, ex: Exception) => ex.printStackTrace
+			case Exit(from: Actor, ex: Exception) => Console.err.println("Actor exception: "+ex); ex.printStackTrace
 			case 0 => exit
 			}
 		}
 	}
 
 	def nextInt(range: Int) = rand.nextInt(range)
-	def msgIdFor(id: Int)(implicit con: SimpyPacketConnectionAPI) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	def str(o: Any) = o.toString
 	def str(o: BigInt) = stringFor(o.toByteArray)
 	def attrString(node: Node, attr: String) = {
@@ -149,10 +149,11 @@ object Util {
 		digest.reset
 		i
 	}
-	def daemonActor(body: => Unit): Actor = {
+	def daemonActor(name: String)(body: => Unit): Actor = {
 		val a = new DaemonActor {
 			def act() = body
 //			override final val scheduler: IScheduler = Actor.parentScheduler
+			override def toString = "DaemonActor " + name
 		}
 		a.start()
 		a

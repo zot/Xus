@@ -72,7 +72,7 @@ object IM extends Peer {
 		if (isServer) {
 			println("peer joined space: " + space + ", topic: " + topic + ", id: " + str(peerCon.peerId));
 			topicsOwned((msg.int("space")(joinReq), msg.int("topic")(joinReq))).addMember(peerCon)
-			peerCon.sendDirect(0, 0, <welcome space={space.toString} topic={topic.toString} pubKey={publicKeyString}/>)
+			peerCon.sendDirect(<welcome space={space.toString} topic={topic.toString} pubKey={publicKeyString}/>)
 		} else {
 			println("connected to space: " + str(peerCon.peerId));
 		}
@@ -93,7 +93,7 @@ object IM extends Peer {
 		Swing.onEDT {frame.title = "Client Chat " + peerId}
 		topicsJoined((0, 1)) = new ChatTopic(0, 1)
 		con = addConnection(SimpyPacketConnection("localhost", port, this))
-		peerConnections(con).sendDirect(0, 0, <join space="0" topic="1" pubKey={publicKeyString}/>)
+		peerConnections(con).sendDirect(<join space="0" topic="1" pubKey={publicKeyString}/>)
 	}
 	class ChatTopic(override val space: Int, override val topic: Int) extends Topic(space, topic, this) {
 		override def basicReceive(msg: SpaceToPeerMessage) {

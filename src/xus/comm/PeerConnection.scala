@@ -16,7 +16,7 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 /**
  * A connection to another peer (wraps a SimpyPacketConnection)
  */
-class PeerConnection(implicit val con: SimpyPacketConnectionAPI) {
+class PeerConnection(val con: SimpyPacketConnectionAPI, peer: Peer) {
 	import Util._
 
 	var peerId = BigInt(0)
@@ -31,19 +31,19 @@ class PeerConnection(implicit val con: SimpyPacketConnectionAPI) {
 	// peer-to-peer messages
 	//
 	// request: challenge, response: challengeResponse
-	def sendChallenge(token: String, msgId: Int = -1) = send(new Challenge, <challenge token={token} msgId={msgIdFor(msgId)}/>)
+	def sendChallenge(token: String, msgId: Int = -1) = send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)}/>)
 
 	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1) =
-		send(new ChallengeResponse, sign(<challenge-response peerid={publicKeyString} token={token} requestId={str(requestId)} msgId={msgIdFor(msgId)}/>))
+		send(new ChallengeResponse, sign(<challenge-response peerid={publicKeyString} token={token} requestid={str(requestId)} msgid={msgIdFor(msgId)}/>))
 
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def sendDirect(space: Int, topic: Int, message: Any, msgId: Int = -1) =
-		send(new Direct, <direct space={str(space)} topic={str(topic)} msgId={msgIdFor(msgId)}>{message}</direct>)
+	def sendDirect(message: Any, msgId: Int = -1) =
+		send(new Direct, <direct msgid={msgIdFor(msgId)}>{message}</direct>)
 
-	def sendCompleted(requestId: Int, message: Any, msgId: Int = -1) = send(new Completed, <completed requestId={str(requestId)} msgId={msgIdFor(msgId)}>{message}</completed>)
+	def sendCompleted(requestId: Int, message: Any, msgId: Int = -1) = send(new Completed, <completed requestid={str(requestId)} msgid={msgIdFor(msgId)}>{message}</completed>)
 
-	def sendFailed(requestId: Int, message: Any, msgId: Int = -1) = send(new Failed, <failed requestId={str(requestId)} msgId={msgIdFor(msgId)}>{message}</failed>)
+	def sendFailed(requestId: Int, message: Any, msgId: Int = -1) = send(new Failed, <failed requestid={str(requestId)} msgid={msgIdFor(msgId)}>{message}</failed>)
 
 	//
 	// peer-to-space messages
@@ -81,18 +81,9 @@ class PeerConnection(implicit val con: SimpyPacketConnectionAPI) {
 	//
 	import Util._
 
-	val bytes = new ByteArrayOutputStream {
-		def byteArray = buf
-	}
-
+	def msgIdFor(id: Int) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	// low level protocol
-	def send[M <: Message](msg: M, node: Node): M = {
-		println("sending to " + str(peerId) + ": " + node)
-		serialize(node, bytes)
-		con.send(bytes.byteArray, 0, bytes.size)
-		bytes.reset
-		msg.set(null, node)
-	}
+	def send[M <: Message](msg: M, node: Node): M = peer.send(con, msg, node)
 	def sign(node: Node) = <signature sig="{stringFor(sign(keyPair.getPrivate, node.toString.toByteArray))}">{node}</signature>
 	def publicKeyString = ""
 }

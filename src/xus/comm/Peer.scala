@@ -11,6 +11,7 @@ import scala.xml.NodeSeq
 import scala.xml.parsing.NoBindingFactoryAdapter
 import java.io.File
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.security.KeyPair
 import java.security.PublicKey
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentParser
@@ -59,7 +60,7 @@ class Peer extends SimpyPacketPeerAPI {
 	val topicsOwned = Map[(Int,Int), Topic]()
 	val topicsJoined = Map[(Int,Int), Topic]()
 	val selfConnection = peerConnections(addConnection(new DirectSimpyPacketConnection(this)))
-	val inputActor = daemonActor {
+	val inputActor = daemonActor("Peer input") {
 		loop {
 			react {
 			case (con: SimpyPacketConnectionAPI, str: ByteArrayInputStream) =>
@@ -86,7 +87,7 @@ class Peer extends SimpyPacketPeerAPI {
 		msg
 	}
 	def closed(con: SimpyPacketConnectionAPI) {
-		topicsOwned.values.foreach(_.removeMember(peerConnections(con)))
+		topicsOwned.valuesIterator.foreach(_.removeMember(peerConnections(con)))
 	}
 	def receiving[M <: Message](msg: M): M = {
 		if (msg.isInstanceOf[Response]) {
@@ -95,10 +96,21 @@ class Peer extends SimpyPacketPeerAPI {
 		msg
 	}
 	def publicKeyString = stringFor(publicKey.getEncoded)
-	def genId = {keyPair = genKeyPair; this}
+	def genId: this.type = {keyPair = genKeyPair; this}
 	def addConnection(con: SimpyPacketConnectionAPI) = {
-		peerConnections(con) = new PeerConnection()(con)
+		peerConnections(con) = new PeerConnection(con, this)
 		con
+	}
+
+	val bytes = new ByteArrayOutputStream {
+		def byteArray = buf
+	}
+	def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
+//		println("sending to " + str(peerId) + ": " + node)
+		serialize(node, bytes)
+		con.send(bytes.byteArray, 0, bytes.size)
+		bytes.reset
+		msg.set(null, node)
 	}
 	///////////////////////////
 	// API
@@ -212,16 +224,16 @@ class Peer extends SimpyPacketPeerAPI {
 
 		prefs("public", true) = stringFor(keyPair.getPublic.getEncoded)
 		prefs("private", true) = stringFor(keyPair.getPrivate.getEncoded)
-		if (storage != null) {
-			println("writing public: " + prefs("public").value)
-			println("writing private: " + prefs("private").value)
-		}
+//		if (storage != null) {
+//			println("writing public: " + prefs("public").value)
+//			println("writing private: " + prefs("private").value)
+//		}
 		storeProps("prefs")
 	}
 	def nodeForProps(name: String) = {
 		import scala.xml.NodeSeq._
 		<props name={name}>{
-			for ((_, prop) <- props(name) filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
+			for ((_, prop) <- props(name).toSequence filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
 				yield <prop name={prop.name} value={prop.value}/>
 		}</props>
 	}
@@ -240,11 +252,11 @@ class Peer extends SimpyPacketPeerAPI {
 						for (name <- strOpt(child.attribute("name"))) name match {
 						case "public" => for (key <- strOpt(child.attribute("value"))) {
 								pub = key
-								println("read public: " + pub)
+//								println("read public: " + pub)
 							}
 						case "private" => for (key <- strOpt(child.attribute("value"))) {
 								priv = key
-								println("read private: " + priv)
+//								println("read private: " + priv)
 							}
 						}
 					}
