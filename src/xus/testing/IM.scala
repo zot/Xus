@@ -12,7 +12,7 @@ import scala.swing._
 import scala.swing.Action
 import scala.util.Random
 
-object IM extends Peer {
+object IM extends Peer("IM") {
 	import xus.comm.Util._
 
 	var isServer = false

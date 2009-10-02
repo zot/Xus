@@ -5,6 +5,7 @@
 
 package xus.comm;
 
+import Util._
 import java.net._
 import java.nio.channels._
 import scala.actors.Actor._
@@ -25,7 +26,7 @@ object Acceptor {
 		}
 	}
 	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
-		peer.addConnection(newCon)
+		peer.peerConnections(peer.addConnection(newCon)).sendChallenge(randomInt(1000000000).toString)
 	}
 	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
 	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {

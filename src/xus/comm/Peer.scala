@@ -27,7 +27,7 @@ object Peer {
 		val m = msg
 
 		m.set(con, node)
-		peer.receiving(msg)
+		peer.receiving(m)
 		block(peer, m)
 		m
 	}
@@ -48,10 +48,10 @@ object Peer {
 	"delegated-dht" -> prep(new DelegatedDHT()) {_.receive(_)}
 	)
 }
-class Peer extends SimpyPacketPeerAPI {
+class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAPI {
 	import Peer._
 
-	val waiters = Map[Int, (Response) => Any]()
+	val waiters = Map[Int, (Response)=>Unit]()
 	var myKeyPair: KeyPair = null
 	var storage: SetStorage = null
 	var storedNodes = Map[String, Node]()
@@ -63,26 +63,28 @@ class Peer extends SimpyPacketPeerAPI {
 	val inputActor = daemonActor("Peer input") {
 		loop {
 			react {
-			case (con: SimpyPacketConnectionAPI, str: ByteArrayInputStream) =>
-				val parser = new SAXDocumentParser
-				val fac = new NoBindingFactoryAdapter
-		
-				parser.setContentHandler(fac)
-				try {
-					parser.parse(str)
-				} catch {
-				case x: Exception => x.printStackTrace
-				}
-				dispatch(peerConnections(con), fac.rootElem)
+			case (con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) => handleInput(con, str)
 			case 0 => exit
 			}
 		}
 	}
 
+	def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
+		val parser = new SAXDocumentParser
+		val fac = new NoBindingFactoryAdapter
+
+		parser.setContentHandler(fac)
+		try {
+			parser.parse(str)
+		} catch {
+		case x: Exception => x.printStackTrace
+		}
+		dispatch(peerConnections(con), fac.rootElem)
+	}
 	def shutdown {
 		inputActor ! 0
 	}
-	def onResponseDo[M <: Message](msg: M)(block: (Response) => Any): M = {
+	def onResponseDo[M <: Message](msg: M)(block: (Response)=>Unit): M = {
 		waiters(msg.msgId) = block
 		msg
 	}
@@ -95,7 +97,7 @@ class Peer extends SimpyPacketPeerAPI {
 		}
 		msg
 	}
-	def publicKeyString = stringFor(publicKey.getEncoded)
+	def publicKeyString = str(publicKey)
 	def genId: this.type = {keyPair = genKeyPair; this}
 	def addConnection(con: SimpyPacketConnectionAPI) = {
 		peerConnections(con) = new PeerConnection(con, this)
@@ -110,14 +112,17 @@ class Peer extends SimpyPacketPeerAPI {
 		serialize(node, bytes)
 		con.send(bytes.byteArray, 0, bytes.size)
 		bytes.reset
-		msg.set(null, node)
+		msg
 	}
 	///////////////////////////
 	// API
 	///////////////////////////
 	var peerId: BigInt = BigInt(0)
 
-	def dispatch(con: PeerConnection, node: Node) = dispatchers(node.label.toLowerCase)(con, node, this)
+	def dispatch(con: PeerConnection, node: Node) = (node match {
+		case <signature>{n @ _}</signature> => dispatchers(n.label.toLowerCase)
+		case _ => dispatchers(node.label.toLowerCase)
+	})(con, node, this)
 	def publicKey = myKeyPair.getPublic
 	def privateKey = myKeyPair.getPrivate
 	def keyPair = myKeyPair
@@ -151,7 +156,7 @@ class Peer extends SimpyPacketPeerAPI {
 		receiveInput(con, bytes.slice(offset, offset + length))
 	}
 	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte]) {
-		inputActor ! (con, new ByteArrayInputStream(bytes))
+		inputActor ! (con, new OpenByteArrayInputStream(bytes))
 	}
 
 	///////////////////////////
@@ -163,12 +168,26 @@ class Peer extends SimpyPacketPeerAPI {
 	def verifySignature(msg: ChallengeResponse): Boolean = true
 	def receive(msg: Challenge) {
 		msg.con.sendChallengeResponse(msg.token, publicKey, msg.msgId)
+		connectBlock
 		basicReceive(msg)
 	}
-	def receive(msg: ChallengeResponse) = basicReceive(msg)
+	def receive(msg: ChallengeResponse) = {
+		msg.con.authenticated = true
+		msg.con.setKey(bytesFor(msg.publicKey))
+	}
 	def receive(msg: Completed) = basicReceive(msg)
 	def receive(msg: Failed) = basicReceive(msg)
-	def receive(msg: Direct) = basicReceive(msg)
+	def receive(msg: Direct) = {
+		msg.payload match {
+		case Seq(n @ <join/>) =>
+			for {
+				space <- strOpt(n.attribute("space"))
+				topic <- strOpt(n.attribute("topic"))
+			} topicsOwned((Integer.parseInt(space), Integer.parseInt(topic))).joinRequest(msg)
+//			println(this + " received: " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
+		case _ => basicReceive(msg)
+		}
+	}
 
 	//
 	// peer-to-space messages
@@ -222,8 +241,8 @@ class Peer extends SimpyPacketPeerAPI {
 	def storePrefs {
 		val prefs = props("prefs")
 
-		prefs("public", true) = stringFor(keyPair.getPublic.getEncoded)
-		prefs("private", true) = stringFor(keyPair.getPrivate.getEncoded)
+		prefs("public", true) = str(keyPair.getPublic)
+		prefs("private", true) = str(keyPair.getPrivate)
 //		if (storage != null) {
 //			println("writing public: " + prefs("public").value)
 //			println("writing private: " + prefs("private").value)
@@ -276,6 +295,7 @@ class Peer extends SimpyPacketPeerAPI {
 			storage.flush
 		}
 	}
+	override def toString = "Peer: " + name + "(" + str(peerId) + ")"
 }
 class Property(val name: String, var value: String, var persist: Boolean)
 class PropertyMap extends HashMap[String,Property] {

@@ -33,11 +33,13 @@ object Protocol {
 
 class Message {
 	var con: PeerConnection = null
-	implicit var node: Node = null
+	var node: Node = null
+	implicit var innerNode: Node = null
 
 	def set(newCon: PeerConnection, newNode: Node): this.type = {
 		con = newCon
 		node = newNode
+		innerNode = newNode
 		this
 	}
 	def string(att: String)(implicit n: Node) = attrString(n, att)
@@ -65,8 +67,13 @@ class Challenge extends Message {
 	def token = string("token")
 }
 class ChallengeResponse extends Response {
-	def responseNode = (node \ "challenge-response")(0)
-	def token = attrString(responseNode, "token")
+	override def set(newCon: PeerConnection, newNode: Node): this.type = {
+		super.set(newCon, newNode)
+		innerNode = (newNode \ "challenge-response")(0)
+		this
+	}
+	def token = string("token")
+	def publicKey = string("publickey")
 }
 class Completed extends Response
 class Failed extends Response

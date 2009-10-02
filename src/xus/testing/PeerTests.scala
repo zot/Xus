@@ -5,8 +5,10 @@ import xus.comm.Util._
 import scala.xml.Node
 import scala.actors.Actor
 import scala.actors.Actor._
+import scala.actors.DaemonActor
 import scala.collection.Sequence
 import scala.collection.JavaConversions._
+import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.channels.SocketChannel
 import java.nio.channels.ServerSocketChannel
@@ -26,7 +28,8 @@ class LoggerStats {
 			react {
 			case i: Int => outstandingEvents += i
 			case (peer: TestPeer, msg: Message) =>
-//				println("event, " + peer + ": " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
+				println("event, " + peer + ": " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
+				Console.flush
 				peer.events += msg
 				eventSignal synchronized {
 					outstandingEvents -= 1
@@ -51,18 +54,34 @@ object PeerTests {
 	var accepting = false
 	var direct = true
 	var stats = new LoggerStats
+	var mainActor: Actor = null
+	val lock = new Object
+	var done = false
 
 	def main(args: Array[String]) {
-		try {
-			println("Staring tests...")
-			direct = false
-			org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
-			stats = new LoggerStats
-			direct = true
-			org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
-			println("Done with tests.")
-		} catch {
-		case e: Error => e.printStackTrace
+		lock synchronized {
+			daemonActor("Tests") {
+				mainActor = self
+				try {
+					println("Staring tests...")
+					direct = true
+					org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
+					stats = new LoggerStats
+					direct = false
+					org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
+					println("Done with tests.")
+					Xus.shutdown
+					lock synchronized {
+						done = true
+						lock.notifyAll
+					}
+				} catch {
+				case e: Error => e.printStackTrace
+				}
+			}
+			while (!done) {
+				lock.wait()
+			}
 		}
 	}
 }
@@ -70,11 +89,13 @@ class PeerTests {
 	import PeerTests._
 
 	val stats = PeerTests.stats
-	val owner = newOwner
-	val member1 = newMember("member 1")
+	var owner: TestPeer = null
+	var member1: TestPeer = null
 
-	@After def goodbye {
-		Xus.shutdown
+	@Before def setup {
+		owner = newOwner
+		member1 = newMember("member 1")
+		println("setup")
 	}
 
 	@Test def test1 {
@@ -82,6 +103,9 @@ class PeerTests {
 			stats.logger ! 2
 			member1.ownerCon.sendBroadcast(0, 1, "hello there")
 		}
+		stats.logger ! 2
+		member1.ownerCon.sendUnicast(0, 1, "uni")
+		member1.ownerCon.sendDHT(0, 1, 5000, "dht")
 		var oldCount = -1
 		var done = false
 
@@ -103,12 +127,11 @@ class PeerTests {
 		assertEquals(0, stats.outstandingEvents)
 	}
 
-	def newPeer(name: String) = new TestPeer(name)
-	
+
 	def newConnection(connection: SocketChannel, peer: Peer, acceptor: Option[Acceptor]) = new CheckingConnection(connection, peer, acceptor)
 
 	def newOwner = {
-		val o = newPeer("Owner")
+		val o = new TestPeer("Owner")
 		val testTopic = new TestTopic(0, 1, o)
 
 		o.topicsOwned((0, 0)) = new Topic(0, 0, o)
@@ -119,30 +142,34 @@ class PeerTests {
 	}
 	
 	def newMember(name: String) = {
-		val m = newPeer(name)
+		val m = new TestPeer(name, mainActor ! ())
 		val testTopic = new TestTopic(0, 1, m)
 		val myEnd = connect(m, owner)
 
-		m.ownerCon = myEnd
 		myEnd.sendDirect(<join space="0" topic="1"/>)
 		m.topicsJoined((0, 1)) = testTopic
 		m
 	}
 
-	def connect(peer1: Peer, peer2: Peer) = {
-		val con = if (direct) {
-			val con = new DirectSimpyPacketConnection(peer1, peer2)
+	def connect(peer1: TestPeer, peer2: TestPeer) = {
+		var pcon: PeerConnection = null
 
+		if (direct) {
+			val con = new DirectSimpyPacketConnection(peer1, peer2)
 			peer2.addConnection(con.otherEnd)
-			con
+			peer1.addConnection(con)
+			peer2.peerConnections(con.otherEnd).sendChallenge(randomInt(1000000000).toString)
+			pcon = peer1.peerConnections(con)
 		} else {
 			if (!accepting) {
+				accepting = true;
 				Acceptor.listen(PORT) {chan =>
 					new Acceptor(chan, peer2) {
 						override def newConnection(connection: SocketChannel) = {
 							val con = PeerTests.this.newConnection(connection, peer2, Some(this))
 
 							peer2.addConnection(con)
+							peer2.peerConnections(con).sendChallenge(randomInt(1000000000).toString)
 							con
 						}
 					}
@@ -152,10 +179,14 @@ class PeerTests {
 			chan.configureBlocking(false)
 			val con = Connection.addConnection(newConnection(chan, peer1, None))
 			chan.connect(new InetSocketAddress(HOST, PORT))
-			con
+			peer1.addConnection(con)
+			pcon = peer1.peerConnections(con)
 		}
-		peer1.addConnection(con)
-		peer1.peerConnections(con)
+		peer1.ownerCon = pcon
+		mainActor.receive {
+			case () => println("CONNECTED")
+		}
+		pcon
 	}
 }
 class CheckingConnection(connection: SocketChannel, peer: Peer, acceptor: Option[Acceptor]) extends SimpyPacketConnection(connection, peer, acceptor) {
@@ -180,44 +211,46 @@ class TestTopic(space: Int, topic: Int, peer: Peer) extends Topic(space, topic, 
 	override def receive(msg: DelegatedBroadcast) {
 		stats.logger ! (peer, msg)
 	}
+	override def receive(msg: DelegatedUnicast) {
+		stats.logger ! (peer, msg)
+	}
+	override def receive(msg: DelegatedDHT) {
+		stats.logger ! (peer, msg)
+	}
 }
-class TestPeer(name: String) extends Peer {
+class TestPeer(name: String, connectBlock: => Unit = null) extends Peer(name, connectBlock) {
 	var ownerCon: PeerConnection = null
 	val events = scala.collection.mutable.ArrayBuffer[Any]()
 	var lastBytes: Sequence[Byte] = null
+	var badBytes = Set[Array[Byte]]()
+	var badNode = false
 	
 	genId
-	
-	override def toString = "Peer: " + name
-	override def receive(msg: Direct) {
-		msg.payload match {
-		case Seq(n @ <join/>) =>
-		for {
-			space <- strOpt(n.attribute("space"))
-			topic <- strOpt(n.attribute("topic"))
-		} {
-			topicsOwned((Integer.parseInt(space), Integer.parseInt(topic))).addMember(msg.con)
-		}
-//			println(this + " received: " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
-		}
-	}
+	println("New peer: "+this)
+
 	override def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte]) {
 		val newBytes = bytes.slice(0, bytes.length).toSequence
-		
+
 		if (lastBytes == newBytes) {
+			badBytes.add(bytes)
 			println("ERROR: SAME BYTES RECEIVED")
 		}
 		assertFalse(newBytes == lastBytes)
 		lastBytes = newBytes
 		super.receiveInput(con, bytes)
 	}
-//	override def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
-//		val ret = super.send(con, msg, node)
-	
-//		println("SENDING: " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
-//		ret
-//	}
-//	override def basicReceive(msg: Message) {
-//		println(this + " received: " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
-//	}
+	override def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) = {
+		if (badBytes(str.bytes)) {
+			badBytes.remove(str.bytes)
+			badNode = true
+		}
+		super.handleInput(con, str)
+	}
+	override def dispatch(con: PeerConnection, node: Node) = {
+		if (badNode) {
+			badNode = false
+			println("Duplicate input: " + node)
+		}
+		super.dispatch(con, node)
+	}
 }

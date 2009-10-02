@@ -22,6 +22,7 @@ import scala.actors.DaemonActor
 import scala.actors.Actor._
 import scala.collection.immutable.Stream
 import java.io.Closeable
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.HashMap
 import java.security._
@@ -54,9 +55,9 @@ object Util {
 		}
 	}
 
-	def nextInt(range: Int) = rand.nextInt(range)
-	def str(o: Any) = o.toString
-	def str(o: BigInt) = stringFor(o.toByteArray)
+	def randomInt(range: Int) = rand.nextInt(range)
+	def str(o: Any): String = o.toString
+	def str(o: BigInt): String = str(o.toByteArray)
 	def attrString(node: Node, attr: String) = {
 		val v = node.attributes(attr)
 
@@ -135,7 +136,8 @@ object Util {
 	def privateKeySpecFor(fileBytes: Array[Byte]) = new PKCS8EncodedKeySpec(fileBytes)
 	def keySpecFor(key: PublicKey) = new X509EncodedKeySpec(key.getEncoded)
 	def keySpecFor(key: PrivateKey) = new PKCS8EncodedKeySpec(key.getEncoded)
-	def stringFor(bytes: Array[Byte]) = {
+	def str(key: Key): String = str(key.getEncoded)
+	def str(bytes: Array[Byte]) = {
 		val out = new StringBuffer
 
 		(new BASE64EncodingAlgorithm).convertToCharacters(bytes, 0, bytes.length, out)
@@ -149,6 +151,15 @@ object Util {
 		digest.reset
 		i
 	}
+	def nactor(name: String)(body: => Unit): Actor = {
+		val a = new Actor {
+			def act() = body
+//			override final val scheduler: IScheduler = Actor.parentScheduler
+			override def toString = "DaemonActor " + name
+		}
+		a.start()
+		a
+	}
 	def daemonActor(name: String)(body: => Unit): Actor = {
 		val a = new DaemonActor {
 			def act() = body
@@ -158,4 +169,8 @@ object Util {
 		a.start()
 		a
 	}
+}
+class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extends ByteArrayInputStream(bytes, offset, len) {
+	def this(bytes: Array[Byte]) = this(bytes, 0, bytes.length)
+	def bytes = buf
 }

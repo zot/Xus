@@ -13,11 +13,14 @@ import Util._
 class Topic(val space: Int, val topic: Int, val peer: Peer) {
 	var members = Array[PeerConnection]()
 
+	//protocol
+	def joinRequest(msg: Direct) = addMember(msg.con)
+
 	//api
 	def addMember(con: PeerConnection) {
 		val newArray = new Array[PeerConnection](members.length + 1)
 
-		println("Topic adding peer: " + str(peer.peerId))
+		println("Topic adding peer: " + str(con.peerId))
 		newArray(0) = con
 		members.copyToArray(newArray, 1)
 		Sorting.quickSort(newArray)
@@ -30,7 +33,7 @@ class Topic(val space: Int, val topic: Int, val peer: Peer) {
 	}
 	def process(broadcast: Broadcast) =
 		members.foreach(_.sendBroadcast(broadcast.sender, broadcast.space, broadcast.topic, broadcast.node.child, broadcast.msgId))
-	def process(unicast: Unicast) = delegateResponse(members(nextInt(members.length)).sendUnicast(unicast.sender, unicast.space, unicast.topic, unicast.node.child, unicast.msgId))
+	def process(unicast: Unicast) = delegateResponse(members(randomInt(members.length)).sendUnicast(unicast.sender, unicast.space, unicast.topic, unicast.node.child, unicast.msgId))
 	def process(dht: DHT) = delegateResponse(findDht(dht).sendDHT(dht.sender, dht.space, dht.topic, dht.key, dht.node.child, dht.msgId))
 	def process(delegate: DelegateDirect) = {
 		members.find(_.peerId == delegate.receiver) match {

@@ -21,8 +21,11 @@ class PeerConnection(val con: SimpyPacketConnectionAPI, peer: Peer) {
 
 	var peerId = BigInt(0)
 	var peerKey: PublicKey = null
+	var authenticationToken = ""
 	var authenticated = false
+	implicit var emptyHandler = (m: Response) => ()
 
+	def publicKeyString = str(peerKey)
 	def setKey(bytes: Array[Byte]) {
 		peerKey = publicKeyFor(bytes)
 		peerId = digestInt(bytes)
@@ -31,15 +34,18 @@ class PeerConnection(val con: SimpyPacketConnectionAPI, peer: Peer) {
 	// peer-to-peer messages
 	//
 	// request: challenge, response: challengeResponse
-	def sendChallenge(token: String, msgId: Int = -1) = send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)}/>)
+	def sendChallenge(token: String, msgId: Int = -1)(implicit block: (Response) => Unit) = {
+		authenticationToken = token
+		send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)}/>)(block)
+	}
 
 	def sendChallengeResponse(token: String, key: PublicKey, requestId: Int, msgId: Int = -1) =
-		send(new ChallengeResponse, sign(<challenge-response peerid={publicKeyString} token={token} requestid={str(requestId)} msgid={msgIdFor(msgId)}/>))
+		send(new ChallengeResponse, sign(<challenge-response publickey={str(key)} token={token} requestid={str(requestId)} msgid={msgIdFor(msgId)}/>))
 
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def sendDirect(message: Any, msgId: Int = -1) =
-		send(new Direct, <direct msgid={msgIdFor(msgId)}>{message}</direct>)
+	def sendDirect(message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+		send(new Direct, <direct msgid={msgIdFor(msgId)}>{message}</direct>)(block)
 
 	def sendCompleted(requestId: Int, message: Any, msgId: Int = -1) = send(new Completed, <completed requestid={str(requestId)} msgid={msgIdFor(msgId)}>{message}</completed>)
 
@@ -48,18 +54,18 @@ class PeerConnection(val con: SimpyPacketConnectionAPI, peer: Peer) {
 	//
 	// peer-to-space messages
 	//
-	def sendBroadcast(space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(new Broadcast, <broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</broadcast>)
+	def sendBroadcast(space: Int, topic: Int,  message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+		send(new Broadcast, <broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</broadcast>)(block)
 
-	def sendUnicast(space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(new Unicast, <unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</unicast>)
+	def sendUnicast(space: Int, topic: Int,  message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+		send(new Unicast, <unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</unicast>)(block)
 
-	def sendDHT(space: Int, topic: Int, key: BigInt, message: Any, msgId: Int = -1) =
-		send(new DHT, <dht space={str(space)} topic={str(topic)} key={str(key)} msgid={msgIdFor(msgId)}>{message}</dht>)
+	def sendDHT(space: Int, topic: Int, key: BigInt, message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+		send(new DHT, <dht space={str(space)} topic={str(topic)} key={str(key)} msgid={msgIdFor(msgId)}>{message}</dht>)(block)
 
-	def sendDelegate(peer: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1) =
-		send(new DelegateDirect, <delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegate>)
-	
+	def sendDelegate(peer: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+		send(new DelegateDirect, <delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegate>)(block)
+
 	//
 	// space-to-peer messages
 	// these are delegated from other peers
@@ -83,7 +89,13 @@ class PeerConnection(val con: SimpyPacketConnectionAPI, peer: Peer) {
 
 	def msgIdFor(id: Int) = (if (id == -1) con.nextOutgoingMsgId else id).toString
 	// low level protocol
-	def send[M <: Message](msg: M, node: Node): M = peer.send(con, msg, node)
-	def sign(node: Node) = <signature sig="{stringFor(sign(keyPair.getPrivate, node.toString.toByteArray))}">{node}</signature>
-	def publicKeyString = ""
+	def send[M <: Message](msg: M, node: Node)(implicit block: (Response)=>Unit): M = {
+		msg.set(null, node)
+		if (block != emptyHandler) {
+			peer.onResponseDo(msg)(block)
+		}
+		peer.send(con, msg, node)
+	}
+//	def sign(node: Node) = <signature sig={str(sign(keyPair.getPrivate, node.toString.toByteArray))}>{node}</signature>
+	def sign(node: Node) = <signature sig="TMP">{node}</signature>
 }
