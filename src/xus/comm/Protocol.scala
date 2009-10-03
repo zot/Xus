@@ -63,7 +63,7 @@ class PeerToPeerMessage extends Message
 class Response extends Message {
 	def requestId = int("requestid")
 }
-class Challenge extends Message {
+class Challenge extends Response {
 	def token = string("token")
 }
 class ChallengeResponse extends Response {
@@ -72,8 +72,10 @@ class ChallengeResponse extends Response {
 		innerNode = (newNode \ "challenge-response")(0)
 		this
 	}
+	def signature = string("sig")(node)
+	def publicKey = string("publickey")(node)
 	def token = string("token")
-	def publicKey = string("publickey")
+	def challengeToken = string("challengetoken")
 }
 class Completed extends Response
 class Failed extends Response

@@ -7,6 +7,7 @@ import scala.actors.Actor
 import scala.actors.Actor._
 import scala.actors.DaemonActor
 import scala.collection.Sequence
+import scala.collection.mutable.{ArrayBuffer => MList}
 import scala.collection.JavaConversions._
 import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
@@ -24,11 +25,12 @@ class LoggerStats {
 	var counts = List[Int]()
 	val eventSignal = new Object
 	val logger = daemonActor("Test Logger") {
+		self link Util.actorExceptions
 		loop {
 			react {
 			case i: Int => outstandingEvents += i
 			case (peer: TestPeer, msg: Message) =>
-				println("event, " + peer + ": " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
+//				println("event, " + peer + ": " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
 				Console.flush
 				peer.events += msg
 				eventSignal synchronized {
@@ -57,20 +59,39 @@ object PeerTests {
 	var mainActor: Actor = null
 	val lock = new Object
 	var done = false
+	var exceptions = MList[Throwable]()
 
 	def main(args: Array[String]) {
+		Util.actorExceptionBlock = {(from: Actor, ex: Exception) =>
+			exceptions.add(ex)
+		}
 		lock synchronized {
 			daemonActor("Tests") {
+				self link Util.actorExceptions
 				mainActor = self
 				try {
-					println("Staring tests...")
 					direct = true
-					org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
+					val failures1 = org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures
 					stats = new LoggerStats
 					direct = false
-					org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.foreach(f => Console.err.println(f.getTrace))
-					println("Done with tests.")
+					val failures2 = org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures
 					Xus.shutdown
+					if (exceptions.isEmpty && failures1.isEmpty && failures2.isEmpty) {
+						println("Success")
+					} else {
+						if (!failures1.isEmpty) {
+							println("Direct failures...")
+							failures1.foreach(f => Console.err.println(f.getTrace))
+						}
+						if (!failures2.isEmpty) {
+							println("Socket failures...")
+							failures2.foreach(f => Console.err.println(f.getTrace))
+						}
+						if (!exceptions.isEmpty) {
+							println("General exceptions...")
+							exceptions.foreach(_.printStackTrace)
+						}
+					}
 					lock synchronized {
 						done = true
 						lock.notifyAll
@@ -80,7 +101,7 @@ object PeerTests {
 				}
 			}
 			while (!done) {
-				lock.wait()
+				lock.wait(1000)
 			}
 		}
 	}
@@ -95,17 +116,22 @@ class PeerTests {
 	@Before def setup {
 		owner = newOwner
 		member1 = newMember("member 1")
-		println("setup")
 	}
 
-	@Test def test1 {
+	@Test def testPeerIds {
+		assertEquals(member1.peerId, member1.selfConnection.peerId)
+		assertEquals(member1.peerId, digestInt(member1.publicKey.getEncoded))
+		assertEquals(owner.peerId, owner.selfConnection.peerId)
+		assertEquals(owner.peerId, digestInt(owner.publicKey.getEncoded))
+	}
+	@Test def testMessaging {
 		for (i <- 1 to 100) {
 			stats.logger ! 2
-			member1.ownerCon.sendBroadcast(0, 1, "hello there")
+			member1.topic.broadcast("hello there")
 		}
 		stats.logger ! 2
-		member1.ownerCon.sendUnicast(0, 1, "uni")
-		member1.ownerCon.sendDHT(0, 1, 5000, "dht")
+		member1.topic.unicast("uni")
+		member1.topic.dht(5000, "dht")
 		var oldCount = -1
 		var done = false
 
@@ -114,10 +140,10 @@ class PeerTests {
 				if (stats.outstandingEvents == 0) {
 					done = true
 				} else {
-					stats.eventSignal.wait(5000)
+					stats.eventSignal.wait(1000)
 					if (oldCount == stats.totalEvents) {
 						done = true
-						println("outstanding events: "+stats.outstandingEvents+", totalEvents: "+stats.totalEvents)
+//						println("outstanding events: "+stats.outstandingEvents+", totalEvents: "+stats.totalEvents)
 					} else {
 						oldCount = stats.totalEvents
 					}
@@ -132,25 +158,19 @@ class PeerTests {
 
 	def newOwner = {
 		val o = new TestPeer("Owner")
-		val testTopic = new TestTopic(0, 1, o)
 
-		o.topicsOwned((0, 0)) = new Topic(0, 0, o)
-		o.topicsOwned((0, 1)) = testTopic
-		o.topicsJoined((0, 1)) = testTopic
-		testTopic.addMember(o.selfConnection)
+		o.own(0, 0)
+		o.own(0, 1, new TestTopicConnection(0, 1, o.selfConnection))
 		o
 	}
 	
 	def newMember(name: String) = {
-		val m = new TestPeer(name, mainActor ! ())
-		val testTopic = new TestTopic(0, 1, m)
+		val m = new TestPeer(name)
 		val myEnd = connect(m, owner)
 
-		myEnd.sendDirect(<join space="0" topic="1"/>)
-		m.topicsJoined((0, 1)) = testTopic
+		m.topic = m.join(new TestTopicConnection(0, 1, myEnd))
 		m
 	}
-
 	def connect(peer1: TestPeer, peer2: TestPeer) = {
 		var pcon: PeerConnection = null
 
@@ -158,9 +178,13 @@ class PeerTests {
 			val con = new DirectSimpyPacketConnection(peer1, peer2)
 			peer2.addConnection(con.otherEnd)
 			peer1.addConnection(con)
-			peer2.peerConnections(con.otherEnd).sendChallenge(randomInt(1000000000).toString)
 			pcon = peer1.peerConnections(con)
+			peer1.waiters((pcon, 1)) = {mainActor ! _}
+			peer2.peerConnections(con.otherEnd).challenge(randomInt(1000000000).toString)
 		} else {
+			// this is a hack
+			// maybe the acceptor should be changed to use the current owner instead of peer2
+			// or else we need to shut down the acceptor in an @after method
 			if (!accepting) {
 				accepting = true;
 				Acceptor.listen(PORT) {chan =>
@@ -169,23 +193,20 @@ class PeerTests {
 							val con = PeerTests.this.newConnection(connection, peer2, Some(this))
 
 							peer2.addConnection(con)
-							peer2.peerConnections(con).sendChallenge(randomInt(1000000000).toString)
+							peer2.peerConnections(con).challenge(randomInt(1000000000).toString)
 							con
 						}
 					}
 				}
 			}
-			val chan = SocketChannel.open
-			chan.configureBlocking(false)
-			val con = Connection.addConnection(newConnection(chan, peer1, None))
-			chan.connect(new InetSocketAddress(HOST, PORT))
-			peer1.addConnection(con)
-			pcon = peer1.peerConnections(con)
+			pcon = peer1.connect(HOST, PORT) {mainActor ! _}
 		}
 		peer1.ownerCon = pcon
-		mainActor.receive {
-			case () => println("CONNECTED")
+		var connected = false
+		mainActor.receiveWithin(1000) {
+			case x => connected = true // println("CONNECTED "+peer1)
 		}
+		assertTrue(connected)
 		pcon
 	}
 }
@@ -203,30 +224,33 @@ class CheckingConnection(connection: SocketChannel, peer: Peer, acceptor: Option
 		super.send(newOutput, offset, len)
 	}
 }
-class TestTopic(space: Int, topic: Int, peer: Peer) extends Topic(space, topic, peer) {
+class TestTopicConnection(space: Int, topic: Int, peer: PeerConnection) extends TopicConnection(space, topic, peer) {
 	import PeerTests._
 	
 	val stats = PeerTests.stats
 	
 	override def receive(msg: DelegatedBroadcast) {
-		stats.logger ! (peer, msg)
+//		println(owner.peer + " received: "+msg)
+		stats.logger ! (owner.peer, msg)
 	}
 	override def receive(msg: DelegatedUnicast) {
-		stats.logger ! (peer, msg)
+//		println(owner.peer + " received: "+msg)
+		stats.logger ! (owner.peer, msg)
 	}
 	override def receive(msg: DelegatedDHT) {
-		stats.logger ! (peer, msg)
+//		println(owner.peer + " received: "+msg)
+		stats.logger ! (owner.peer, msg)
 	}
 }
-class TestPeer(name: String, connectBlock: => Unit = null) extends Peer(name, connectBlock) {
+class TestPeer(name: String) extends Peer(name) {
 	var ownerCon: PeerConnection = null
 	val events = scala.collection.mutable.ArrayBuffer[Any]()
 	var lastBytes: Sequence[Byte] = null
 	var badBytes = Set[Array[Byte]]()
 	var badNode = false
+	var topic: TopicConnection = null
 	
 	genId
-	println("New peer: "+this)
 
 	override def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte]) {
 		val newBytes = bytes.slice(0, bytes.length).toSequence

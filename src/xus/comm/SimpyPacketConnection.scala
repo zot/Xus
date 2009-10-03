@@ -21,6 +21,7 @@ trait SimpyPacketConnectionAPI {
 	def nextOutgoingMsgId: Int
 	def send(bytes: Array[Byte], offset: Int, len: Int): Unit
 	def send(bytes: Array[Byte]) {send(bytes, 0, bytes.length)}
+	def close
 }
 trait SimpyPacketPeerAPI {
 	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte], offset: Int, length: Int): Unit
@@ -31,17 +32,18 @@ object SimpyPacketConnection {
 	import Connection._
 	
 	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
-	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI): SimpyPacketConnection = {
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
 		val chan = SocketChannel.open
 		
 		chan.configureBlocking(false)
 		val con = addConnection(this(chan, peer, None))
+		conBlock(con)
 		chan.connect(new InetSocketAddress(host, port))
 		con
 	}
 }
 
-class DirectSimpyPacketConnection(peer: SimpyPacketPeerAPI, var otherEnd: DirectSimpyPacketConnection) extends SimpyPacketConnectionAPI {
+class DirectSimpyPacketConnection(val peer: SimpyPacketPeerAPI, var otherEnd: DirectSimpyPacketConnection) extends SimpyPacketConnectionAPI {
 	var msgId = -1
 
 	if (otherEnd == null) {
@@ -50,6 +52,7 @@ class DirectSimpyPacketConnection(peer: SimpyPacketPeerAPI, var otherEnd: Direct
 		otherEnd.otherEnd = this
 	}
 
+	def close = peer.closed(this)
 	def this(peer: SimpyPacketPeerAPI) = this(peer, null.asInstanceOf[DirectSimpyPacketConnection])
 	def this(peer: SimpyPacketPeerAPI, otherPeer: SimpyPacketPeerAPI) = this(peer, new DirectSimpyPacketConnection(otherPeer))
 	def nextOutgoingMsgId: Int = {
@@ -58,6 +61,7 @@ class DirectSimpyPacketConnection(peer: SimpyPacketPeerAPI, var otherEnd: Direct
 	}
 	def send(bytes: Array[Byte], offset: Int, len: Int) = otherEnd.receive(bytes, 0, bytes.length)
 	def receive(bytes: Array[Byte], offset: Int, len: Int) = peer.receiveInput(this, bytes, 0, bytes.length)
+	override def toString = "Direct Connection("+otherEnd.peer+")"
 }
 
 class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor] = None) extends Connection[SocketChannel](clientChan) with SimpyPacketConnectionAPI {

@@ -23,44 +23,47 @@ import scala.xml.persistent.SetStorage
 import Util._
 
 object Peer {
+	val dispatchers = Map(
+			"challenge" -> prep(new Challenge()) {_.receive(_)},
+			"challenge-response" -> prep(new ChallengeResponse()) {_.receive(_)},
+			"completed" -> prep(new Completed()) {_.receive(_)},
+			"failed" -> prep(new Failed()) {_.receive(_)},
+			"direct" -> prep(new Direct()) {_.receive(_)},
+			"delegate-direct" -> prep(new DelegateDirect()) {_.receive(_)},
+			"broadcast" -> prep(new Broadcast()) {_.receive(_)},
+			"unicast" -> prep(new Unicast()) {_.receive(_)},
+			"dht" -> prep(new DHT()) {_.receive(_)},
+			"delegated-direct" -> prep(new DelegatedDirect()) {_.receive(_)},
+			"delegated-broadcast" -> prep(new DelegatedBroadcast()) {_.receive(_)},
+			"delegated-unicast" -> prep(new DelegatedUnicast()) {_.receive(_)},
+			"delegated-dht" -> prep(new DelegatedDHT()) {_.receive(_)}
+	)
+	implicit val emptyHandler = (r: Response) => ()
+	implicit val emptyConnectBlock = () => ()
+	
 	def prep[M <: Message](msg: => M)(block: (Peer, M) => Any) = {(con: PeerConnection, node: Node, peer: Peer) =>
 		val m = msg
 
 		m.set(con, node)
-		peer.receiving(m)
 		block(peer, m)
+		peer.received(m)
 		m
 	}
-
-	val dispatchers = Map(
-	"challenge" -> prep(new Challenge()) {_.receive(_)},
-	"challenge-response" -> prep(new ChallengeResponse()) {_.receive(_)},
-	"completed" -> prep(new Completed()) {_.receive(_)},
-	"failed" -> prep(new Failed()) {_.receive(_)},
-	"direct" -> prep(new Direct()) {_.receive(_)},
-	"delegate-direct" -> prep(new DelegateDirect()) {_.receive(_)},
-	"broadcast" -> prep(new Broadcast()) {_.receive(_)},
-	"unicast" -> prep(new Unicast()) {_.receive(_)},
-	"dht" -> prep(new DHT()) {_.receive(_)},
-	"delegated-direct" -> prep(new DelegatedDirect()) {_.receive(_)},
-	"delegated-broadcast" -> prep(new DelegatedBroadcast()) {_.receive(_)},
-	"delegated-unicast" -> prep(new DelegatedUnicast()) {_.receive(_)},
-	"delegated-dht" -> prep(new DelegatedDHT()) {_.receive(_)}
-	)
 }
-class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAPI {
+class Peer(name: String) extends SimpyPacketPeerAPI {
 	import Peer._
 
-	val waiters = Map[Int, (Response)=>Unit]()
+	val waiters = Map[(PeerConnection, Int), (Response)=>Any]()
 	var myKeyPair: KeyPair = null
 	var storage: SetStorage = null
 	var storedNodes = Map[String, Node]()
 	var props = Map("prefs" -> new PropertyMap())
 	val peerConnections = Map[SimpyPacketConnectionAPI, PeerConnection]()
 	val topicsOwned = Map[(Int,Int), Topic]()
-	val topicsJoined = Map[(Int,Int), Topic]()
+	val topicsJoined = Map[(Int,Int), TopicConnection]()
 	val selfConnection = peerConnections(addConnection(new DirectSimpyPacketConnection(this)))
 	val inputActor = daemonActor("Peer input") {
+		self link Util.actorExceptions
 		loop {
 			react {
 			case (con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) => handleInput(con, str)
@@ -68,7 +71,21 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 			}
 		}
 	}
+	
+	selfConnection.authenticated = true
 
+	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+		val pcon = new PeerConnection(null, this)
+
+		if (connectBlock != emptyHandler) {
+			waiters((pcon, 1)) = connectBlock
+		}
+		SimpyPacketConnection(host, port, this) {con =>
+			pcon.con = con
+			peerConnections(con) = pcon
+		}
+		pcon
+	}
 	def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
 		val parser = new SAXDocumentParser
 		val fac = new NoBindingFactoryAdapter
@@ -84,16 +101,17 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 	def shutdown {
 		inputActor ! 0
 	}
-	def onResponseDo[M <: Message](msg: M)(block: (Response)=>Unit): M = {
-		waiters(msg.msgId) = block
+	def onResponseDo[M <: Message](msg: M)(block: (Response)=>Any): M = {
+		waiters((msg.con, msg.msgId)) = block
 		msg
 	}
 	def closed(con: SimpyPacketConnectionAPI) {
 		topicsOwned.valuesIterator.foreach(_.removeMember(peerConnections(con)))
+		peerConnections.remove(con)
 	}
-	def receiving[M <: Message](msg: M): M = {
+	def received[M <: Message](msg: M): M = {
 		if (msg.isInstanceOf[Response]) {
-			waiters.remove(msg.msgId).foreach(_(msg.asInstanceOf[Response]))
+			waiters.remove((msg.con, msg.msgId)).foreach(_(msg.asInstanceOf[Response]))
 		}
 		msg
 	}
@@ -119,9 +137,34 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 	///////////////////////////
 	var peerId: BigInt = BigInt(0)
 
+	def own(space: Int, topic: Int): Topic = own(space, topic, new TopicConnection(space, topic, selfConnection))
+	def own(space: Int, topic: Int, connection: TopicConnection): Topic = own(new Topic(space, topic, this), connection)
+	def own[T <: Topic](topic: T): T = own(topic, new TopicConnection(topic.space, topic.topic, selfConnection))
+	def own[T <: Topic](topic: T, connection: TopicConnection): T = {
+		topicsOwned((topic.space, topic.topic)) = topic
+		if (connection != null) {
+			connection.join
+		}
+		topic
+	}
+	def join(space: Int, topic: Int, con: PeerConnection): TopicConnection = join(new TopicConnection(space, topic, con))
+	def join[C <: TopicConnection](con: C): C = {
+		con.join
+		con
+	}
 	def dispatch(con: PeerConnection, node: Node) = (node match {
-		case <signature>{n @ _}</signature> => dispatchers(n.label.toLowerCase)
-		case _ => dispatchers(node.label.toLowerCase)
+		case <signature>{n @ <challenge-response/>}</signature> => dispatchers(n.label.toLowerCase)
+		case <challenge/> => dispatchers(node.label.toLowerCase)
+		case _ =>
+			if (!con.authenticated) {
+				val msg = new Message()
+				msg.set(null, node)
+				con.failed(msg, "Not authenticated")
+				con.close
+				(con: PeerConnection, node: Node, peer: Peer) => println("Connection did not validate: "+con+", msg: "+node)
+			} else {
+				dispatchers(node.label.toLowerCase)
+			}
 	})(con, node, this)
 	def publicKey = myKeyPair.getPublic
 	def privateKey = myKeyPair.getPrivate
@@ -133,8 +176,8 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 		storePrefs
 	}
 	def delegateResponse(msg: Message, response: Response) = response match {
-	case succeed: Completed => msg.con.sendCompleted(succeed.requestId, succeed.payload)
-	case fail: Failed => msg.con.sendFailed(fail.requestId, fail.payload)
+	case succeed: Completed => msg.con.completed(succeed.requestId, succeed.payload)
+	case fail: Failed => msg.con.failed(fail.requestId, fail.payload)
 	}
 	
 	///////////////////////////
@@ -165,15 +208,23 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 	//
 	// peer-to-peer messages
 	//
-	def verifySignature(msg: ChallengeResponse): Boolean = true
+	def verifySignature(node: Node, key: PublicKey, signature: Array[Byte]): Boolean = verify(node, key, signature)
 	def receive(msg: Challenge) {
-		msg.con.sendChallengeResponse(msg.token, publicKey, msg.msgId)
-		connectBlock
+		val myToken = randomInt(1000000000)
+		msg.con.challengeResponse(msg.token, str(myToken),  msg.msgId)
 		basicReceive(msg)
 	}
 	def receive(msg: ChallengeResponse) = {
-		msg.con.authenticated = true
 		msg.con.setKey(bytesFor(msg.publicKey))
+		if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature))) {
+			msg.con.authenticated = true
+			if (msg.challengeToken.length > 0) {
+				msg.con.challengeResponse(msg.challengeToken, "", msg.msgId)
+			}
+		} else {
+			msg.con.failed(msg, "Invalid signature")
+			msg.con.close
+		}
 	}
 	def receive(msg: Completed) = basicReceive(msg)
 	def receive(msg: Failed) = basicReceive(msg)
@@ -295,7 +346,7 @@ class Peer(name: String, connectBlock: => Unit = null) extends SimpyPacketPeerAP
 			storage.flush
 		}
 	}
-	override def toString = "Peer: " + name + "(" + str(peerId) + ")"
+	override def toString = "Peer(" + name + ", " + str(peerId) + ")"
 }
 class Property(val name: String, var value: String, var persist: Boolean)
 class PropertyMap extends HashMap[String,Property] {

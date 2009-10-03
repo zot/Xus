@@ -11,12 +11,13 @@ import scala.actors.Actor._
 import scala.swing._
 import scala.swing.Action
 import scala.util.Random
+import Peer._
 
 object IM extends Peer("IM") {
 	import xus.comm.Util._
 
 	var isServer = false
-	var con: SimpyPacketConnectionAPI = null
+	var topic: TopicConnection = null
 	var frame = new MainFrame {
 		import javax.swing.KeyStroke
 		import javax.swing.text.JTextComponent
@@ -27,7 +28,7 @@ object IM extends Peer("IM") {
 		val input = new EditorPane {
 			val inputKm = JTextComponent.addKeymap("input", JTextComponent.getKeymap(JTextComponent.DEFAULT_KEYMAP))
 			inputKm.addActionForKeyStroke(KeyStroke.getKeyStroke("ENTER"), Action("send") {
-				peerConnections(con).sendBroadcast(0, 1, text)
+				topic.broadcast(text)
 				text = ""
 			}.peer)
 			border = Swing.EtchedBorder
@@ -61,41 +62,22 @@ object IM extends Peer("IM") {
 			client(Integer.parseInt(args(1)))
 		}
 	}
-	override def receive(msg: Direct) {
-		val joinReq = msg.payload(0)
-		val space = msg.int("space")(joinReq)
-		val topic = msg.int("topic")(joinReq)
-		val pubKey = msg.string("pubkey")(joinReq)
-		val peerCon = msg.con.asInstanceOf[PeerConnection]
-
-		peerCon.setKey(bytesFor(pubKey))
-		if (isServer) {
-			println("peer joined space: " + space + ", topic: " + topic + ", id: " + str(peerCon.peerId));
-			topicsOwned((msg.int("space")(joinReq), msg.int("topic")(joinReq))).addMember(peerCon)
-			peerCon.sendDirect(<welcome space={space.toString} topic={topic.toString} pubKey={publicKeyString}/>)
-		} else {
-			println("connected to space: " + str(peerCon.peerId));
-		}
-//		println("Received direct message: " + msg.node)
-	}
 	def server(port: Int) {
 		isServer = true
 		Swing.onEDT {frame.title = "Server Chat " + peerId}
-		topicsOwned((0, 0)) = new Topic(0, 0, this)
-		val chatTopic = new ChatTopic(0, 1)
-		topicsOwned((0, 1)) = chatTopic
-		topicsJoined((0, 1)) = chatTopic
-		chatTopic.addMember(selfConnection)
-		con = selfConnection.con
+		topic = new ChatTopicConnection(0, 0, selfConnection)
+		own(0, 0)
+		own(0, 1, topic)
 		Acceptor.listen(port, this)
 	}
 	def client(port: Int) {
 		Swing.onEDT {frame.title = "Client Chat " + peerId}
-		topicsJoined((0, 1)) = new ChatTopic(0, 1)
-		con = addConnection(SimpyPacketConnection("localhost", port, this))
-		peerConnections(con).sendDirect(<join space="0" topic="1" pubKey={publicKeyString}/>)
+		connect("localhost", port) {m =>
+			println("Connected")
+			topic = join(new ChatTopicConnection(0, 1, m.con))
+		}
 	}
-	class ChatTopic(override val space: Int, override val topic: Int) extends Topic(space, topic, this) {
+	class ChatTopicConnection(override val space: Int, override val topic: Int, con: PeerConnection) extends TopicConnection(space, topic, con) {
 		override def basicReceive(msg: SpaceToPeerMessage) {
 			val doc = frame.output.peer.getDocument
 

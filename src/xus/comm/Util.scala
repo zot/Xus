@@ -8,6 +8,7 @@ package xus.comm
 import scala.xml.Elem
 import scala.xml.TopScope
 import scala.xml.Node
+import scala.xml.Null
 import scala.xml.Text
 import scala.xml.Atom
 import scala.xml.Document
@@ -16,6 +17,9 @@ import scala.xml.Utility
 import scala.xml.MetaData
 import scala.xml.EntityRef
 import scala.xml.Comment
+import scala.xml.NamespaceBinding
+import scala.xml.SpecialNode
+import scala.xml.Group
 import scala.actors.Exit
 import scala.actors.Actor
 import scala.actors.DaemonActor
@@ -42,14 +46,17 @@ object Xus {
 }
 class NodeBlock(val block: (SAXDocumentSerializer) => Unit) extends Elem("", "", null, TopScope) {}
 object Util {
-	val rand = new java.util.Random
+	val rand = new java.security.SecureRandom
 	val digest = MessageDigest.getInstance("SHA1")
 	// variable so that apps can override this behavior 
-	var actorExceptions = daemonActor("Exception handler") {
+	var actorExceptionBlock = {(from: Actor, ex: Exception) =>
+		Console.err.println("Eception in actor "+from+": "+ex); ex.printStackTrace
+	}
+	val actorExceptions = daemonActor("Exception handler") {
 		self.trapExit = true
 		loop {
 			react {
-			case Exit(from: Actor, ex: Exception) => Console.err.println("Actor exception: "+ex); ex.printStackTrace
+			case Exit(from: Actor, ex: Exception) => actorExceptionBlock(from, ex)
 			case 0 => exit
 			}
 		}
@@ -168,6 +175,73 @@ object Util {
 		}
 		a.start()
 		a
+	}
+	def sign(node: Node, key: PrivateKey) = {
+		val rsa = Signature.getInstance("SHA1withRSA")
+		val xml = toXML(node).toString
+
+		rsa.initSign(key)
+		rsa.update(xml.getBytes, 0, xml.length)
+		rsa.sign
+	}
+	def verify(node: Node, key: PublicKey, sig: Array[Byte]) = {
+		val rsa = Signature.getInstance("SHA1withRSA")
+		val xml = toXML(node).toString
+
+		rsa.initVerify(key)
+		rsa.update(xml.getBytes, 0, xml.length)
+		rsa.verify(sig)
+	}
+	def toXML(
+	    x: Node,
+	    pscope: NamespaceBinding = TopScope,
+	    sb: StringBuilder = new StringBuilder,
+	    stripComments: Boolean = false,
+	    decodeEntities: Boolean = true,
+	    preserveWhitespace: Boolean = true,
+	    minimizeTags: Boolean = false): StringBuilder = {
+		x match {
+		case c: Comment if !stripComments => c buildString sb
+		case x: SpecialNode               => x buildString sb
+		case g: Group                     => for (c <- g.nodes) toXML(c, x.scope, sb) ; sb 
+		case _  =>
+			// print tag with namespace declarations
+			sb.append('<')
+			x.nameToString(sb)
+			if (x.attributes ne null) sortedAttributes(x).buildString(sb)
+			x.scope.buildString(sb, pscope)
+			if (x.child.isEmpty && minimizeTags)
+				// no children, so use short form: <xyz .../>
+				sb.append(" />")
+			else {
+				// children, so use long form: <xyz ...>...</xyz>
+				sb.append('>')
+				sequenceToXML(x.child, x.scope, sb, stripComments)
+				sb.append("</")
+				x.nameToString(sb)
+				sb.append('>')
+			}
+		}
+	}
+	def sortedAttributes(node: Node) = node.attributes.toSequence.sortWith((a,b)=>a.key < b.key).foldRight(Null.asInstanceOf[MetaData]) {(attr, next) => attr.copy(next)}
+	private def isAtomAndNotText(x: Node) = x.isAtom && !x.isInstanceOf[Text]
+	def sequenceToXML(
+			children: Seq[Node],
+			pscope: NamespaceBinding = TopScope,
+			sb: StringBuilder = new StringBuilder,
+			stripComments: Boolean = false): Unit = {
+		if (children.isEmpty) return
+		else if (children forall isAtomAndNotText) { // add space
+			val it = children.iterator
+			val f = it.next
+			toXML(f, pscope, sb)
+			while (it.hasNext) {
+				val x = it.next
+				sb.append(' ')
+				toXML(x, pscope, sb)
+			}
+		}
+		else children foreach { toXML(_, pscope, sb) }
 	}
 }
 class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extends ByteArrayInputStream(bytes, offset, len) {
