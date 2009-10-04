@@ -210,13 +210,14 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	def verifySignature(node: Node, key: PublicKey, signature: Array[Byte]): Boolean = verify(node, key, signature)
 	def receive(msg: Challenge) {
-		val myToken = randomInt(1000000000)
+		val myToken = str(randomInt(1000000000))
+		msg.con.authenticationToken = myToken
 		msg.con.challengeResponse(msg.token, str(myToken),  msg.msgId)
 		basicReceive(msg)
 	}
 	def receive(msg: ChallengeResponse) = {
 		msg.con.setKey(bytesFor(msg.publicKey))
-		if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature))) {
+		if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature)) && msg.con.authenticationToken == msg.token) {
 			msg.con.authenticated = true
 			if (msg.challengeToken.length > 0) {
 				msg.con.challengeResponse(msg.challengeToken, "", msg.msgId)
