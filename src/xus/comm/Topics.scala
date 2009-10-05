@@ -18,12 +18,11 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		peer.topicsJoined((space, topic)) = this
 		if (owner == peer.selfConnection) {
 			joined = true
-			peer.topicsOwned.get((space, topic)) foreach {t =>
-				t.addMember(peer.selfConnection)
-			}
+			peer.topicsOwned.get((space, topic)).foreach(_.addMember(peer.selfConnection))
 		} else {
 			owner.direct(<xus-join space={str(space)} topic={str(topic)} pubKey={peer.publicKeyString}/>) {m =>
 				println("JOINED GROUP")
+				peer.useProps(m.payload(0))
 				joined = true
 				println(m)
 			}
@@ -52,10 +51,12 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 
 	// hooks
 	def receiveDeleteProp(msg: DelegatedBroadcast, name: String) {
-		for (prop <- peer.props(propsKey).remove(name)) {
-			if (prop.persist && peer.topicsOwned.contains((space, topic))) {
+		for {
+			prop <- peer.props(propsKey).remove(name)
+			if prop.persist
+			topic <- peer.topicsOwned.get((space, topic))
+		} {
 				peer.storeProps(propsKey)
-			}
 		}
 	}
 	def receiveSetProp(msg: DelegatedBroadcast, name: String, value: String, persist: Boolean) {
@@ -74,9 +75,7 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 				persist <- strOpt(n, "persist")
 			} receiveSetProp(msg, name, value, persist.toBoolean)
 		case Seq(n @ <xus-delprop/>) =>
-			for {
-				name <- strOpt(n, "name")
-			} receiveDeleteProp(msg, name)
+			for (name <- strOpt(n, "name")) receiveDeleteProp(msg, name)
 		case _ =>
 		}
 		basicReceive(msg)

@@ -176,9 +176,7 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 			try {chan.socket.shutdownInput} catch {case _ =>}
 			try {chan.socket.shutdownOutput} catch {case _ =>}
 			try {chan.close} catch {case _ =>}
-			for (a <- optAcceptor) {
-				a.remove(this)
-			}
+			for (a <- optAcceptor) a.remove(this)
 			peer.closed(this)
 		}
 		exit

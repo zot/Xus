@@ -325,27 +325,22 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 			storedNodes(name) = n
 			val map = new PropertyMap()
 			props(name) = map
-			for (child <- n.child) {
-				for {
-					name <- strOpt(child, "name")
-					value <- strOpt(child, "value")
-				} map(name) = value
-			}
+			for {
+				child <- n.child
+				name <- strOpt(child, "name")
+				value <- strOpt(child, "value")
+			} map(name) = value
 			if (name == "prefs") {
 				var pub = ""
 				var priv= ""
 
-				for (child <- n.child) {
-					for (name <- strOpt(child, "name")) name match {
-					case "public" => for (key <- strOpt(child, "value")) {
-							pub = key
-//							println("read public: " + pub)
-						}
-					case "private" => for (key <- strOpt(child, "value")) {
-							priv = key
-//							println("read private: " + priv)
-						}
-					}
+				for {
+					child <- n.child
+					name <- strOpt(child, "name")
+					value <- strOpt(child, "value")} name match {
+				case "public" => pub = value
+				case "private" => priv = value
+				case _ =>
 				}
 				keyPair = new KeyPair(publicKeyFor(bytesFor(pub)), privateKeyFor(bytesFor(priv)))
 			}
