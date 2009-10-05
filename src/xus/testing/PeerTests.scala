@@ -179,7 +179,7 @@ class PeerTests {
 			peer2.addConnection(con.otherEnd)
 			peer1.addConnection(con)
 			pcon = peer1.peerConnections(con)
-			peer1.waiters((pcon, 1)) = {mainActor ! _}
+			peer1.waiters((pcon, 0)) = {mainActor ! _}
 			peer2.peerConnections(con.otherEnd).challenge(randomInt(1000000000).toString)
 		} else {
 			// this is a hack

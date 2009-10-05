@@ -14,20 +14,26 @@ import Util._
 class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection) {
 	var joined = false
 
-	def join = {
-		owner.peer.topicsJoined((space, topic)) = this
-		if (owner == owner.peer.selfConnection) {
+	def join: this.type = {
+		peer.topicsJoined((space, topic)) = this
+		if (owner == peer.selfConnection) {
 			joined = true
-			owner.peer.topicsOwned.get((space, topic)) foreach {t =>
-				t.addMember(owner.peer.selfConnection)
+			peer.topicsOwned.get((space, topic)) foreach {t =>
+				t.addMember(peer.selfConnection)
 			}
 		} else {
-			owner.direct(<join space={str(space)} topic={str(topic)} pubKey={owner.peer.publicKeyString}/>) {m =>
+			owner.direct(<xus-join space={str(space)} topic={str(topic)} pubKey={peer.publicKeyString}/>) {m =>
+				println("JOINED GROUP")
 				joined = true
+				println(m)
 			}
 		}
 		this
 	}
+	def setprop(name: String, value: String, persist: Boolean) =
+		owner.broadcast(space, topic, <xus-setprop name={name} value={value} persist={persist.toString}/>)
+	def delprop(name: String, value: String) =
+		owner.broadcast(space, topic, <xus-delprop name={name}/>)
 
 	//
 	// peer-to-peer messages
@@ -44,22 +50,64 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	def dht(key: BigInt, message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.dht(space, topic, key, message, msgId)(block)
 	def delegate(peer: Int, message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, message, msgId)(block)
 
-	// hooks -- these do nothing; feel free to override them for you app
-	def receive(msg: DelegatedBroadcast) = basicReceive(msg)
+	// hooks
+	def receiveDeleteProp(msg: DelegatedBroadcast, name: String) {
+		for (prop <- peer.props(propsKey).remove(name)) {
+			if (prop.persist && peer.topicsOwned.contains((space, topic))) {
+				peer.storeProps(propsKey)
+			}
+		}
+	}
+	def receiveSetProp(msg: DelegatedBroadcast, name: String, value: String, persist: Boolean) {
+		peer.props(propsKey)(name, persist) = value
+		// only owners really need to persist topic properties
+		if (persist && peer.topicsOwned.contains((space, topic))) {
+			peer.storeProps(propsKey)
+		}
+	}
+	def receive(msg: DelegatedBroadcast) {
+		msg.payload match {
+		case Seq(n @ <xus-setprop/>) =>
+			for {
+				name <- strOpt(n, "name")
+				value <- strOpt(n, "value")
+				persist <- strOpt(n, "persist")
+			} receiveSetProp(msg, name, value, persist.toBoolean)
+		case Seq(n @ <xus-delprop/>) =>
+			for {
+				name <- strOpt(n, "name")
+			} receiveDeleteProp(msg, name)
+		case _ =>
+		}
+		basicReceive(msg)
+	}
 	def receive(msg: DelegatedUnicast) = basicReceive(msg)
 	def receive(msg: DelegatedDHT) = basicReceive(msg)
 	def receive(msg: DelegatedDirect) = basicReceive(msg)
 	def basicReceive(msg: SpaceToPeerMessage) {}
+	def peer = owner.peer
+	val propsKey = (space, topic).toString
 }
 
 class Topic(val space: Int, val topic: Int, val peer: Peer) {
 	var members = Array[PeerConnection]()
 
 	//protocol
+	/**
+	 * by default, allow any peer to join
+	 */
 	def joinRequest(msg: Direct) = {
 		addMember(msg.con)
-		msg.con.completed(msg, "Welcome to topic "+space+", "+topic+".")
+		msg.con.completed(msg, peer.nodeForProps(propsKey))
 	}
+	/**
+	 * by default, allow any peer to broadcast property settings
+	 */
+	def setPropRequest(msg: Broadcast) = process(msg)
+	/**
+	 * by default, allow any peer to broadcast property deletions
+	 */
+	def deletePropRequest(msg: Broadcast) = process(msg)
 
 	//api
 	def addMember(con: PeerConnection) {
@@ -99,6 +147,7 @@ class Topic(val space: Int, val topic: Int, val peer: Peer) {
 		}._1
 	}
 	override def toString = "Topic "+space+", "+topic
+	def propsKey = (space, topic).toString
 }
 
 trait TopicManagement {

@@ -77,6 +77,7 @@ object Util {
 			sb.toString
 		}
 	}
+	def strOpt(node: Node, attribute: String) = node.attribute(attribute).map(_.mkString)
 	def attributes(d: MetaData) = {
 		val attrs = new AttributesHolder
 
@@ -95,7 +96,7 @@ object Util {
 		val INT_PAT = "^([0-9]+)$".r
 
 		data match {
-		case INT_PAT(i) => (null, EncodingAlgorithmIndexes.INT, Array(Integer.parseInt(i)));
+		case INT_PAT(i) => (null, EncodingAlgorithmIndexes.INT, Array(i.toInt));
 		case _ => (null, -1, data)
 		}
 	}

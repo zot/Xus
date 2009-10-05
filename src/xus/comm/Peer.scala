@@ -62,6 +62,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	val topicsOwned = Map[(Int,Int), Topic]()
 	val topicsJoined = Map[(Int,Int), TopicConnection]()
 	val selfConnection = peerConnections(addConnection(new DirectSimpyPacketConnection(this)))
+	val emptyProps = new PropertyMap()
 	val inputActor = daemonActor("Peer input") {
 		self link Util.actorExceptions
 		loop {
@@ -78,7 +79,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		val pcon = new PeerConnection(null, this)
 
 		if (connectBlock != emptyHandler) {
-			waiters((pcon, 1)) = connectBlock
+			waiters((pcon, 0)) = connectBlock
 		}
 		SimpyPacketConnection(host, port, this) {con =>
 			pcon.con = con
@@ -110,8 +111,9 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		peerConnections.remove(con)
 	}
 	def received[M <: Message](msg: M): M = {
-		if (msg.isInstanceOf[Response]) {
-			waiters.remove((msg.con, msg.msgId)).foreach(_(msg.asInstanceOf[Response]))
+		msg match {
+		case r: Response => waiters.remove((r.con, r.requestId)).foreach(_(r))
+		case _ =>
 		}
 		msg
 	}
@@ -126,7 +128,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		def byteArray = buf
 	}
 	def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
-//		println("sending to " + str(peerId) + ": " + node)
+//		println("sending to " + con + ": " + node)
 		serialize(node, bytes)
 		con.send(bytes.byteArray, 0, bytes.size)
 		bytes.reset
@@ -148,10 +150,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		topic
 	}
 	def join(space: Int, topic: Int, con: PeerConnection): TopicConnection = join(new TopicConnection(space, topic, con))
-	def join[C <: TopicConnection](con: C): C = {
-		con.join
-		con
-	}
+	def join[C <: TopicConnection](con: C): C = con.join
 	def dispatch(con: PeerConnection, node: Node) = (node match {
 		case <signature>{n @ <challenge-response/>}</signature> => dispatchers(n.label.toLowerCase)
 		case <challenge/> => dispatchers(node.label.toLowerCase)
@@ -212,7 +211,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def receive(msg: Challenge) {
 		val myToken = str(randomInt(1000000000))
 		msg.con.authenticationToken = myToken
-		msg.con.challengeResponse(msg.token, str(myToken),  msg.msgId)
+		msg.con.challengeResponse(msg.token, str(myToken), msg.msgId)
 		basicReceive(msg)
 	}
 	def receive(msg: ChallengeResponse) = {
@@ -231,14 +230,15 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def receive(msg: Failed) = basicReceive(msg)
 	def receive(msg: Direct) = {
 		msg.payload match {
-		case Seq(n @ <join/>) =>
+		case Seq(n @ <xus-join/>) =>
 			for {
-				space <- strOpt(n.attribute("space"))
-				topic <- strOpt(n.attribute("topic"))
-			} topicsOwned((Integer.parseInt(space), Integer.parseInt(topic))).joinRequest(msg)
+				space <- strOpt(n, "space")
+				topic <- strOpt(n, "topic")
+			} topicsOwned((space.toInt, topic.toInt)).joinRequest(msg)
 //			println(this + " received: " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
-		case _ => basicReceive(msg)
+		case _ =>
 		}
+		basicReceive(msg)
 	}
 
 	//
@@ -246,7 +246,19 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// delegate broadcasting, etc to the topic
 	def receive(msg: Broadcast) {
-		topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		msg.payload match {
+		case Seq(n @ <xus-setprop/>) =>
+			for {
+				space <- strOpt(n, "space")
+				topic <- strOpt(n, "topic")
+			} topicsOwned((space.toInt, topic.toInt)).setPropRequest(msg)
+		case Seq(n @ <xus-delprop/>) =>
+			for {
+				space <- strOpt(n, "space")
+				topic <- strOpt(n, "topic")
+			} topicsOwned((space.toInt, topic.toInt)).deletePropRequest(msg)
+		case _ => topicsOwned.get((msg.space, msg.topic)).foreach(_.process(msg))
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: Unicast) {
@@ -304,37 +316,45 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def nodeForProps(name: String) = {
 		import scala.xml.NodeSeq._
 		<props name={name}>{
-			for ((_, prop) <- props(name).toSequence filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
+			for ((_, prop) <- props.get(name).getOrElse(emptyProps).toSequence filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
 				yield <prop name={prop.name} value={prop.value}/>
 		}</props>
 	}
-	def strOpt(opt: Option[Seq[Node]]) = opt.map(_.mkString)
+	def useProps(n: Node) {
+		for (name <- strOpt(n, "name")) {
+			storedNodes(name) = n
+			val map = new PropertyMap()
+			props(name) = map
+			for (child <- n.child) {
+				for {
+					name <- strOpt(child, "name")
+					value <- strOpt(child, "value")
+				} map(name) = value
+			}
+			if (name == "prefs") {
+				var pub = ""
+				var priv= ""
+
+				for (child <- n.child) {
+					for (name <- strOpt(child, "name")) name match {
+					case "public" => for (key <- strOpt(child, "value")) {
+							pub = key
+//							println("read public: " + pub)
+						}
+					case "private" => for (key <- strOpt(child, "value")) {
+							priv = key
+//							println("read private: " + priv)
+						}
+					}
+				}
+				keyPair = new KeyPair(publicKeyFor(bytesFor(pub)), privateKeyFor(bytesFor(priv)))
+			}
+		}
+	}
 	def readStorage(f: File) {
 		storage = null
 		val str = new SetStorage(f)
-		str.nodes foreach {n =>
-			var pub = ""
-			var priv= ""
-
-			for (name <- strOpt(n.attribute("name"))) {
-				storedNodes(name) = n
-				if (name == "prefs") {
-					for (child <- n.child) {
-						for (name <- strOpt(child.attribute("name"))) name match {
-						case "public" => for (key <- strOpt(child.attribute("value"))) {
-								pub = key
-//								println("read public: " + pub)
-							}
-						case "private" => for (key <- strOpt(child.attribute("value"))) {
-								priv = key
-//								println("read private: " + priv)
-							}
-						}
-					}
-					keyPair = new KeyPair(publicKeyFor(bytesFor(pub)), privateKeyFor(bytesFor(priv)))
-				}
-			}
-		}
+		for (n <- str.nodes) useProps(n)
 		storage = str
 	}
 	def storeProps(name: String) {

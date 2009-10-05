@@ -57,9 +57,9 @@ object IM extends Peer("IM") {
 		}
 		println("my peer id: " + str(peerId));
 		if (args(0) == "server") {
-			server(Integer.parseInt(args(1)))
+			server(args(1).toInt)
 		} else {
-			client(Integer.parseInt(args(1)))
+			client(args(1).toInt)
 		}
 	}
 	def server(port: Int) {

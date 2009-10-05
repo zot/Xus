@@ -13,7 +13,7 @@ object Connection {
 	val BUFFER_SIZE = 1024 * 1024
 	val selector = Selector.open
 	val connections = MMap[SelectableChannel, Connection[_ <: SelectableChannel]]()
-	var waitTime = Integer.parseInt(System.getProperty("xus.waitTime", "1000"))
+	var waitTime = System.getProperty("xus.waitTime", "1000").toInt
 	val selectorActor = daemonActor("Selector") {
 		self link Util.actorExceptions
 		loop {

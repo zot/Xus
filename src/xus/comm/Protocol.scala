@@ -52,8 +52,8 @@ class Message {
 			Some(id)
 		}
 	}
-	def int(att: String)(implicit n: Node) = Integer.parseInt(string(att)(n))
-	def intOpt(att: String)(implicit n: Node): Option[Int] = stringOpt(att)(n).map(Integer.parseInt(_))
+	def int(att: String)(implicit n: Node) = string(att)(n).toInt
+	def intOpt(att: String)(implicit n: Node): Option[Int] = stringOpt(att)(n).map(_.toInt)
 	def bigInt(att: String)(implicit n: Node) = BigInt(bytesFor(string(att)(n)))
 	def msgId = int("msgid")
 	override def toString = getClass.getSimpleName + ": " + node
