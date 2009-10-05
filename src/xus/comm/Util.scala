@@ -224,7 +224,7 @@ object Util {
 			}
 		}
 	}
-	def sortedAttributes(node: Node) = node.attributes.toSequence.sortWith((a,b)=>a.key < b.key).foldRight(Null.asInstanceOf[MetaData]) {(attr, next) => attr.copy(next)}
+	def sortedAttributes(node: Node) = node.attributes.toSeq.sortWith((a,b)=>a.key < b.key).foldRight(Null.asInstanceOf[MetaData]) {(attr, next) => attr.copy(next)}
 	private def isAtomAndNotText(x: Node) = x.isAtom && !x.isInstanceOf[Text]
 	def sequenceToXML(
 			children: Seq[Node],

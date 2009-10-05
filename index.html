@@ -619,10 +619,10 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 <div title="MainMenu" modifier="Zot" created="200909131611" changecount="1">
 <pre>MainMenu</pre>
 </div>
-<div title="Overview" modifier="WRB" created="200909210655" modified="200909210759" changecount="10">
+<div title="Overview" modifier="WRB" created="200909210655" modified="200910051242" changecount="11">
 <pre>Xus is a peer-to-peer protocol with a reference implementation in Scala.  The point of Xus is to provide a peer-to-peer platform that is simple, powerful, practical, and easy to use.  People can use it for games, social networks, source code repositories, or whatever.
 
-* ''Simple'': able to implemented with a relatively small amount of code so that it's easy to maintain and fix
+* ''Simple'': able to implemented with a relatively [[small amount of code]] so that it's easy to maintain and fix
 ** Layered: there are 3 layers.  Layering separates the concerns of the protocol and makes it easier to understand
 ** Self contained: the reference implementation does not rely on third party libraries, reducing cognitive overhead for future developers
 ** Scala: reference implementation is is Scala, which allows for smaller code that is &quot;less noisy&quot; than Java
@@ -688,6 +688,13 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 &lt;delegated-dht msgid=&quot;123123&quot; sender=&quot;67&quot; key=&quot;5&quot; topic=&quot;54&quot; space=&quot;7&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
 &lt;delegated-direct msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot; space=&quot;7&quot;&gt;&lt;whisper&gt;Doy?&lt;/whisper&gt;&lt;/delegate&gt;
 }}}</pre>
+</div>
+<div title="small amount of code" modifier="WRB" created="200910051243" modified="200910051245" changecount="4">
+<pre>Here's the expression I use to calculate lines of code, which remove blank lines and comment lines:
+
+{{{find src/xus/comm -name '*.scala'|xargs grep -v '^ *//\|^ *$\|^ */\*\|^ *\*'|wc}}}
+
+At the time of this writing, the current value is 1206</pre>
 </div>
 </div>
 <!--POST-STOREAREA-->

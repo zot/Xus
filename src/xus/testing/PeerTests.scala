@@ -11,7 +11,6 @@ import scala.xml.Node
 import scala.actors.Actor
 import scala.actors.Actor._
 import scala.actors.DaemonActor
-import scala.collection.Sequence
 import scala.collection.mutable.{ArrayBuffer => MList}
 import scala.collection.JavaConversions._
 import java.io.ByteArrayInputStream
@@ -219,8 +218,8 @@ class CheckingConnection(connection: SocketChannel, peer: Peer, acceptor: Option
 	var lastBytes: Sequence[Byte] = null
 
 	override def send(newOutput: Array[Byte], offset: Int, len: Int) {
-		val newBytes = newOutput.slice(offset, offset + len).toSequence
-		
+		val newBytes = newOutput.slice(offset, offset + len).toSeq
+
 		if (newBytes == lastBytes) {
 			println("ERROR: SAME BYTES SENT")
 		}
@@ -258,7 +257,7 @@ class TestPeer(name: String) extends Peer(name) {
 	genId
 
 	override def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte]) {
-		val newBytes = bytes.slice(0, bytes.length).toSequence
+		val newBytes = bytes.slice(0, bytes.length).toSeq
 
 		if (lastBytes == newBytes) {
 			badBytes.add(bytes)

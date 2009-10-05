@@ -130,6 +130,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
 //		println("sending to " + con + ": " + node)
 		serialize(node, bytes)
+//		println("sending packet ["+bytes.size+"] to "+node)
 		con.send(bytes.byteArray, 0, bytes.size)
 		bytes.reset
 		msg
@@ -316,7 +317,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def nodeForProps(name: String) = {
 		import scala.xml.NodeSeq._
 		<props name={name}>{
-			for ((_, prop) <- props.get(name).getOrElse(emptyProps).toSequence filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
+			for ((_, prop) <- props.get(name).getOrElse(emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
 				yield <prop name={prop.name} value={prop.value}/>
 		}</props>
 	}
