@@ -21,10 +21,10 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 			peer.topicsOwned.get((space, topic)).foreach(_.addMember(peer.selfConnection))
 		} else {
 			owner.direct(<xus-join space={str(space)} topic={str(topic)} pubKey={peer.publicKeyString}/>) {m =>
-				println("JOINED GROUP")
+//				println("JOINED GROUP")
 				peer.useProps(m.payload(0))
 				joined = true
-				println(m)
+//				println(m)
 			}
 		}
 		this

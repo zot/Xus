@@ -1,3 +1,8 @@
+/*******
+ * Copyright (c) 2009 Bill Burdick and the TEAM CTHULHU development team
+ * Licensed under the ZLIB license: http://www.opensource.org/licenses/zlib-license.php
+ *******/
+
 package xus.comm
 
 import java.nio.ByteBuffer
