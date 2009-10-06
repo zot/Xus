@@ -516,9 +516,10 @@ Also see [[AdvancedOptions]]</pre>
 [[Overview]]
 [[Goals]]</pre>
 </div>
-<div title="FAQ" modifier="WRB" created="200910060725" changecount="1">
+<div title="FAQ" modifier="WRB" created="200910060725" modified="200910061229" changecount="5">
 <pre># Why does Xus use XML when it's so inefficient?
-** Xus uses a binary encoding of XML over the wire called [[Fast Infoset|http://en.wikipedia.org/wiki/Fast_Infoset]]. Fast infoset is included in the JRE and it is efficient and customizable so that most tag and attribute names don't even necessarily need to be sent over as text; they can be referenced with a common &quot;vocabulary&quot; and send as a numeric index.  Xus doesn't currently use this feature of Fast Infoset, but it may in the future when we are ready to optimize the transport.  This allows Xus to use Scala's built-in XML capabilities and allows developers to use off-the-shelf XML processing tools while still saving bandwidth during communication.</pre>
+** Xus uses a binary encoding of XML over the wire called [[Fast Infoset|http://en.wikipedia.org/wiki/Fast_Infoset]]. Fast infoset is included in the JRE and it is efficient and customizable so that most tag and attribute names don't even necessarily need to be sent over as text; they can be referenced with a common &quot;vocabulary&quot; and send as a numeric index (which Xus does).  This allows Xus to use Scala's built-in XML capabilities and allows developers to use off-the-shelf XML processing tools while still saving bandwidth during communication.
+** This message: {{{&lt;challenge token=&quot;613070806&quot; requestid=&quot;-1&quot; msgid=&quot;0&quot;&gt;&lt;/challenge&gt;}}} takes up 58 bytes without using a vocabulary and 24 bytes with Xus' protocol vocabulary.  There is one element with 3 attributes, one with a 3 numbers.  Fast infoset uses a variety of clever encoding techniques, including BER encoding and Xus encodes attributes as shorts, ints, or longs, if it can.</pre>
 </div>
 <div title="Goals" modifier="WRB" created="200909131612" modified="200909210708" changecount="124">
 <pre>[[Roadmap]]
