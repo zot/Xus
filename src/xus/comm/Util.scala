@@ -32,11 +32,16 @@ import java.util.HashMap
 import java.security._
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
+import javax.xml.namespace.QName
+import com.sun.xml.internal.fastinfoset.QualifiedName
 import com.sun.xml.internal.fastinfoset.sax.AttributesHolder;
 import com.sun.xml.internal.fastinfoset.QualifiedName;
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 import com.sun.xml.internal.org.jvnet.fastinfoset.EncodingAlgorithmIndexes
 import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
+import com.sun.xml.internal.org.jvnet.fastinfoset.Vocabulary
+import com.sun.xml.internal.fastinfoset.vocab.ParserVocabulary
+import com.sun.xml.internal.fastinfoset.vocab.SerializerVocabulary
 
 object Xus {
 	def shutdown {
@@ -60,6 +65,34 @@ object Util {
 			case 0 => exit
 			}
 		}
+	}
+	val xusVocabulary = new Vocabulary {
+		scala.collection.JavaConversions.asSet(elements.asInstanceOf[java.util.Set[QName]]) ++ (Array[String](
+			"challenge",
+			"challenge-response",
+			"completed",
+			"failed",
+			"direct",
+			"delegate-direct",
+			"broadcast",
+			"unicast",
+			"dht",
+			"delegated-direct",
+			"delegated-broadcast",
+			"delegated-unicast",
+			"delegated-dht"
+		) map {QName.valueOf(_)})
+		scala.collection.JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ (Array[String](
+			"token",
+			"msgid",
+			"requestid",
+			"challengetoken",
+			"space",
+			"topic",
+			"sender",
+			"sig",
+			"publickey"
+		) map {QName.valueOf(_)})
 	}
 
 	def randomInt(range: Int) = rand.nextInt(range)
@@ -96,7 +129,13 @@ object Util {
 		val INT_PAT = "^([0-9]+)$".r
 
 		data match {
-		case INT_PAT(i) => (null, EncodingAlgorithmIndexes.INT, Array(i.toInt));
+		case INT_PAT(i) =>
+			val v = BigInt(i)
+
+			if (v > Math.MIN_SHORT.asInstanceOf[Int] && v < Math.MAX_SHORT.asInstanceOf[Int]) (null, EncodingAlgorithmIndexes.SHORT, Array(v.shortValue))
+			else if (v > Math.MIN_INT && v < Math.MAX_INT) (null, EncodingAlgorithmIndexes.INT, Array(v.intValue))
+			else if (v > Math.MIN_LONG && v < Math.MAX_LONG) (null, EncodingAlgorithmIndexes.LONG, Array(v.longValue))
+			else (null, -1, data)
 		case _ => (null, -1, data)
 		}
 	}
@@ -117,9 +156,10 @@ object Util {
 		val serializer = new SAXDocumentSerializer()
 
 		serializer.setOutputStream(bytes)
-		serializer.startDocument();
+		serializer.startDocument()
+		serializer.setVocabulary(new SerializerVocabulary(xusVocabulary, false))
 		serialize(node, serializer)
-		serializer.endDocument();
+		serializer.endDocument()
 	}
 	implicit def happyCloseable[T <: Closeable](stream: T) = new {
 		def closeAfter(block: (T) => Any) {
@@ -248,4 +288,5 @@ object Util {
 class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extends ByteArrayInputStream(bytes, offset, len) {
 	def this(bytes: Array[Byte]) = this(bytes, 0, bytes.length)
 	def bytes = buf
+	def memento = (pos, count, buf)
 }

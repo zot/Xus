@@ -40,7 +40,7 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	// request: challenge, response: challengeResponse
 	def challenge(token: String, msgId: Int = -1)(implicit block: (Response) => Unit) = {
 		authenticationToken = token
-		send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)} requestId={str(-1)}/>)(block)
+		send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)} requestid={str(-1)}/>)(block)
 	}
 
 	def challengeResponse(token: String, challengeToken: String, requestId: Int, msgId: Int = -1)(implicit block: (Response) => Unit) =

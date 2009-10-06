@@ -22,9 +22,7 @@ object IM extends Peer("IM") {
 		import javax.swing.KeyStroke
 		import javax.swing.text.JTextComponent
 
-		val output = new EditorPane {
-			border = Swing.EtchedBorder
-		}
+		val output = new EditorPane
 		val input = new EditorPane {
 			val inputKm = JTextComponent.addKeymap("input", JTextComponent.getKeymap(JTextComponent.DEFAULT_KEYMAP))
 			inputKm.addActionForKeyStroke(KeyStroke.getKeyStroke("ENTER"), Action("send") {
@@ -35,15 +33,14 @@ object IM extends Peer("IM") {
 			peer.setKeymap(inputKm)
 		}
 		input.maximumSize = new java.awt.Dimension(Integer.MAX_VALUE, 24)
-		input.preferredSize = new java.awt.Dimension(Integer.MAX_VALUE, 24)
-		val km = input.peer.getKeymap
+		input.preferredSize = new java.awt.Dimension(0, 24)
 		contents = new BoxPanel(Orientation.Vertical) {
-			contents += output
+			contents += new ScrollPane(output)
 			contents += input
 		}
-		listenTo(input)
 		size = (400, 300)
 		open
+		input.peer.grabFocus
 	}
 
 	def main(args: Array[String]) {

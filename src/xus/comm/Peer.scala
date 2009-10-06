@@ -19,6 +19,7 @@ import scala.collection.mutable.Map
 import scala.collection.mutable.HashMap
 import scala.actors.Actor._
 import scala.xml.persistent.SetStorage
+import com.sun.xml.internal.fastinfoset.vocab.ParserVocabulary
 
 import Util._
 
@@ -91,14 +92,18 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
 		val parser = new SAXDocumentParser
 		val fac = new NoBindingFactoryAdapter
+		val mem = str.memento
 
 		parser.setContentHandler(fac)
+		parser.setVocabulary(new ParserVocabulary(xusVocabulary))
 		try {
 			parser.parse(str)
+			dispatch(peerConnections(con), fac.rootElem)
 		} catch {
-		case x: Exception => x.printStackTrace
+		case x: Exception =>
+			Console.err.println("Error parsing stream pos = "+mem._1+", count = "+mem._2+", buf size = "+mem._3.length)
+			x.printStackTrace
 		}
-		dispatch(peerConnections(con), fac.rootElem)
 	}
 	def shutdown {
 		inputActor ! 0
@@ -137,7 +142,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
 //		println("sending to " + con + ": " + node)
 		serialize(node, bytes)
-//		println("sending packet ["+bytes.size+"] to "+node)
+//		println("sending packet ["+bytes.size+"], "+node)
 		con.send(bytes.byteArray, 0, bytes.size)
 		bytes.reset
 		msg
