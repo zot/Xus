@@ -511,9 +511,14 @@ Also see [[AdvancedOptions]]</pre>
 </div>
 <!--POST-SHADOWAREA-->
 <div id="storeArea">
-<div title="DefaultTiddlers" modifier="WRB" created="200909131611" modified="200909210633" changecount="2">
-<pre>[[Overview]]
+<div title="DefaultTiddlers" modifier="WRB" created="200909131611" modified="200910060718" changecount="4">
+<pre>[[Guide]]
+[[Overview]]
 [[Goals]]</pre>
+</div>
+<div title="FAQ" modifier="WRB" created="200910060725" changecount="1">
+<pre># Why does Xus use XML when it's so inefficient?
+** Xus uses a binary encoding of XML over the wire called [[Fast Infoset|http://en.wikipedia.org/wiki/Fast_Infoset]]. Fast infoset is included in the JRE and it is efficient and customizable so that most tag and attribute names don't even necessarily need to be sent over as text; they can be referenced with a common &quot;vocabulary&quot; and send as a numeric index.  Xus doesn't currently use this feature of Fast Infoset, but it may in the future when we are ready to optimize the transport.  This allows Xus to use Scala's built-in XML capabilities and allows developers to use off-the-shelf XML processing tools while still saving bandwidth during communication.</pre>
 </div>
 <div title="Goals" modifier="WRB" created="200909131612" modified="200909210708" changecount="124">
 <pre>[[Roadmap]]
@@ -616,13 +621,21 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 ** (public) topic-space.ID = SPACE NAME, MODERATED
 ** (public) topic-space.ID.~OWNER-ID = true</pre>
 </div>
-<div title="MainMenu" modifier="Zot" created="200909131611" changecount="1">
-<pre>MainMenu</pre>
+<div title="Guide" modifier="WRB" created="200910060717" modified="200910060717" changecount="2">
+<pre>[[FAQ]]
+[[Roadmap]]</pre>
 </div>
-<div title="Overview" modifier="WRB" created="200909210655" modified="200909210759" changecount="10">
+<div title="MainMenu" modifier="WRB" created="200909131611" modified="200910060718" changecount="4">
+<pre>[[Overview]]
+[[FAQ]]
+MainMenu
+----
+[[TiddlyWiki|http://tiddlywiki.com/]]</pre>
+</div>
+<div title="Overview" modifier="WRB" created="200909210655" modified="200910051242" changecount="11">
 <pre>Xus is a peer-to-peer protocol with a reference implementation in Scala.  The point of Xus is to provide a peer-to-peer platform that is simple, powerful, practical, and easy to use.  People can use it for games, social networks, source code repositories, or whatever.
 
-* ''Simple'': able to implemented with a relatively small amount of code so that it's easy to maintain and fix
+* ''Simple'': able to implemented with a relatively [[small amount of code]] so that it's easy to maintain and fix
 ** Layered: there are 3 layers.  Layering separates the concerns of the protocol and makes it easier to understand
 ** Self contained: the reference implementation does not rely on third party libraries, reducing cognitive overhead for future developers
 ** Scala: reference implementation is is Scala, which allows for smaller code that is &quot;less noisy&quot; than Java
@@ -658,16 +671,36 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 &lt;delegate msgid=&quot;123123&quot; peer=&quot;5&quot;&gt;&lt;private-message&gt;Whisper, whisper&lt;/private-message&gt;&lt;/direct&gt;
 }}}</pre>
 </div>
-<div title="Roadmap" modifier="WRB" created="200909141131" modified="200909210630" changecount="13">
+<div title="Roadmap" modifier="WRB" created="200909141131" modified="200910060821" changecount="25">
 <pre>Milestones
 # Basic Xus: basic stack and protocol
 ** [DONE] Simpy Packets,
-** Topic Spaces
-** property services
-# Files &amp; Git
-** Integrate with ~JGit
-** Use Git's signing feature
-** local web server, ala Freenet
+** [DONE] Topic Spaces
+** [IN PROGRESS] property services
+# Managed topics
+** heart beats in layer 1
+*** heartbeat config message in layer 2 specifies a heartbeat period
+*** heartbeats are 0-length packets in layer 1
+*** a heartbeat is only sent if there has been no message sent within the heartbeat period
+** properties for topic 0: the management topic
+*** peer.&lt;peer number&gt; -&gt; &lt;banned?&gt;, &lt;accepts connections?&gt;, &lt;topic manager?&gt;, &lt;ip addr&gt;, &lt;peer key&gt;
+** info message for peers that returns an HTML document describing the peer
+# File storage (based on Git's objects)
+** store objects by hash
+*** blob: ordered list of chunk-hashes for the file, signature of blob
+*** chunk: file-index hash, offset in file, and content
+*** tree
+**** names and hashes of contents (conceptually a list of path, file-index-hash pairs)
+**** signature of tree by peer that created it
+**** corresponds to a Git tree + commit + tag
+** Replication among topic managers
+*** use DHT with Scribe-like copying from neighbor in background
+*** only peers which can accept connections participate in the DHT
+*** modify DHT message to take boolean parameter which restricts participants to directly accessible peers only
+*** if copy is not finished, reprioritize copy to fetch requested node next
+** plugin to Integrate with Git (deterministic transformation from Xus format to Git's) -- probably use ~JGit for this
+** plugin to provide a local web server, ala Freenet
+*** Users can surf to a URL like {{{http://localhost:&lt;xus-port&gt;/0-1/content/&lt;path&gt;}}} to access content from a topic space or {{{http://localhost:&lt;xus-port&gt;/0-1/peer/&lt;peer-id&gt;/&lt;path&gt;}}} to access content on a peer
 # Plexus reintegration
 ** Make Plexus use Xus instead of Pastry
 # Social stuff
@@ -688,6 +721,13 @@ Messages From Peer To Peer ([[Peer to Peer Examples]])
 &lt;delegated-dht msgid=&quot;123123&quot; sender=&quot;67&quot; key=&quot;5&quot; topic=&quot;54&quot; space=&quot;7&quot;&gt;&lt;control-monster mid=&quot;79&quot;/&gt;&lt;/dht-send&gt;
 &lt;delegated-direct msgid=&quot;23&quot; sender=&quot;12&quot; topic=&quot;5&quot; space=&quot;7&quot;&gt;&lt;whisper&gt;Doy?&lt;/whisper&gt;&lt;/delegate&gt;
 }}}</pre>
+</div>
+<div title="small amount of code" modifier="WRB" created="200910051243" modified="200910051245" changecount="4">
+<pre>Here's the expression I use to calculate lines of code, which remove blank lines and comment lines:
+
+{{{find src/xus/comm -name '*.scala'|xargs grep -v '^ *//\|^ *$\|^ */\*\|^ *\*'|wc}}}
+
+At the time of this writing, the current value is 1206</pre>
 </div>
 </div>
 <!--POST-STOREAREA-->
