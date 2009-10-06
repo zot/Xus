@@ -13,6 +13,9 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable.{Map => MMap}
 
 object Acceptor {
+	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
+		peer.peerConnections(peer.addConnection(newCon)).challenge(randomInt(1000000000).toString)
+	}
 	def listenCustom(port: Int, peer: SimpyPacketPeerAPI)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
 		listen(port) {chan =>
 			new Acceptor(chan, peer) {
@@ -25,10 +28,7 @@ object Acceptor {
 			}
 		}
 	}
-	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
-		peer.peerConnections(peer.addConnection(newCon)).challenge(randomInt(1000000000).toString)
-	}
-	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port) {chan =>	new Acceptor(chan, peer)}
+	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port)(new Acceptor(_, peer))
 	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
 		val sock = ServerSocketChannel.open
 

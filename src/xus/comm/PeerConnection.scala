@@ -19,14 +19,13 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
  */
 class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	import Util._
+	import Peer._
 
 	var peerId = BigInt(0)
 	var peerKey: PublicKey = null
 	var authenticationToken = ""
 	var authenticated = false
 	val ownedSpaces = MList[Int]()
-	implicit var emptyHandler = (m: Response) => ()
-	implicit var emptyHandler2: (Response) => Any = m => ()
 
 	override def toString = "PeerConnection ("+con+")"
 	def close = con.close

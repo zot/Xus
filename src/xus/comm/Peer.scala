@@ -76,6 +76,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	selfConnection.authenticated = true
 
 	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+		//split this creation into steps so the waiter is in place before the connection initiates
 		val pcon = new PeerConnection(null, this)
 
 		if (connectBlock != emptyHandler) {
@@ -103,7 +104,13 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		inputActor ! 0
 	}
 	def onResponseDo[M <: Message](msg: M)(block: (Response)=>Any): M = {
-		waiters((msg.con, msg.msgId)) = block
+		waiters((msg.con, msg.msgId)) = waiters.get((msg.con, msg.msgId)) match {
+		case Some(inner) => {r =>
+			inner(r)
+			block(r)
+		}
+		case None => block
+		}
 		msg
 	}
 	def closed(con: SimpyPacketConnectionAPI) {
@@ -140,6 +147,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	///////////////////////////
 	var peerId: BigInt = BigInt(0)
 
+	def own(connection: TopicConnection): Topic = own(new Topic(connection.space, connection.topic, this), connection)
 	def own(space: Int, topic: Int): Topic = own(space, topic, new TopicConnection(space, topic, selfConnection))
 	def own(space: Int, topic: Int, connection: TopicConnection): Topic = own(new Topic(space, topic, this), connection)
 	def own[T <: Topic](topic: T): T = own(topic, new TopicConnection(topic.space, topic.topic, selfConnection))

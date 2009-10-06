@@ -65,9 +65,9 @@ object IM extends Peer("IM") {
 	def server(port: Int) {
 		isServer = true
 		Swing.onEDT {frame.title = "Server Chat " + peerId}
-		topic = new ChatTopicConnection(0, 0, selfConnection)
 		own(0, 0)
-		own(0, 1, topic)
+		topic = new ChatTopicConnection(0, 1, selfConnection)
+		own(topic)
 		Acceptor.listen(port, this)
 	}
 	def client(port: Int) {
