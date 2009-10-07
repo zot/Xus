@@ -12,38 +12,34 @@ import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 import Util._
 
 object Protocol {
-	val CHALLENGE = "challenge"
-	val CHALLENGE_RESPONSE = "challenge-response"
-	val COMPLETED = "completed"
-	val FAILED = "failed"
-	val DIRECT = "direct"
-	val BROADCAST = "broadcast"
-	val UNICAST = "unicast"
-	val DELEGATE_DIRECT = "direct"
-	val DHT = "dht"
-	val DELEGATED_BROADCAST = "delegated-broadcast"
-	val DELEGATED_UNICAST = "delegated-unicast"
-	val DELEGATED_DIRECT = "delegated-direct"
-	val DELEGATED_DHT = "delegated-dht"
-
+	val messageMap = Map(
+		new Challenge().entry,
+		new ChallengeResponse().entry,
+		new Completed().entry,
+		new Failed().entry,
+		new Direct().entry,
+		new DHT().entry,
+		new Broadcast().entry,
+		new Unicast().entry,
+		new DelegateDirect().entry,
+		new DelegatedDirect().entry,
+		new DelegatedDHT().entry,
+		new DelegatedBroadcast().entry,
+		new DelegatedUnicast().entry)
 	implicit object PeerConnectionOrdering extends Ordering[PeerConnection] {
 		def compare(a: PeerConnection, b: PeerConnection) = a.peerId.compareTo(b.peerId)
 	}
 }
 
-class Message(val nodeName: String) {
+abstract class Message(val nodeName: String) extends Cloneable {
 	var con: PeerConnection = null
 	var node: Node = null
 	implicit var innerNode: Node = null
 
-	def apply(block: (Peer, this.type) => Any): (String, (PeerConnection, Node) => this.type) = nodeName -> {(con: PeerConnection, node: Node) =>
-		val m = clone.asInstanceOf[this.type].set(con, node)
-
-		m.set(con, node)
-		block(con.peer, m)
-		con.peer.received(m)
-		m
-	}
+	def copy = clone.asInstanceOf[this.type]
+	def entry = nodeName -> this
+	def attributes = List("msgid")
+	def dispatch(peer: Peer)
 	def set(newCon: PeerConnection, newNode: Node): this.type = {
 		con = newCon
 		node = newNode
@@ -67,14 +63,19 @@ class Message(val nodeName: String) {
 	override def toString = getClass.getSimpleName + ": " + node
 	def payload = node.child
 }
-class PeerToPeerMessage(name: String) extends Message(name)
-class Response(name: String) extends Message(name) {
+abstract class PeerToPeerMessage(name: String) extends Message(name)
+abstract class Response(name: String) extends Message(name) {
+	override def attributes = "requestid" :: super.attributes
 	def requestId = int("requestid")
 }
 class Challenge extends Response("challenge") {
+	override def attributes = "token" :: super.attributes
+	def dispatch(peer: Peer) = peer.receive(this)
 	def token = string("token")
 }
 class ChallengeResponse extends Response("challenge-response") {
+	def dispatch(peer: Peer) = peer.receive(this)
+	override def attributes = List("sig", "publickey", "token", "challengetoken") ::: super.attributes
 	override def set(newCon: PeerConnection, newNode: Node): this.type = {
 		super.set(newCon, newNode)
 		innerNode = (newNode \ nodeName)(0)
@@ -85,29 +86,53 @@ class ChallengeResponse extends Response("challenge-response") {
 	def token = string("token")
 	def challengeToken = string("challengetoken")
 }
-class Completed extends Response("completed")
-class Failed extends Response("failed")
-class Direct extends PeerToPeerMessage("direct")
-class TopicSpaceMessage(name: String) extends Message(name) {
+class Completed extends Response("completed") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class Failed extends Response("failed") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class Direct extends PeerToPeerMessage("direct") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+abstract class TopicSpaceMessage(name: String) extends Message(name) {
+	override def attributes = "space" :: "topic" :: super.attributes
 	def space = int("space")
 	def topic = int("topic")
 	def message = node.child
 }
-class PeerToSpaceMessage(name: String) extends TopicSpaceMessage(name) {
+abstract class PeerToSpaceMessage(name: String) extends TopicSpaceMessage(name) {
 	def sender = con.peerId
 }
 class DHT extends PeerToSpaceMessage("dht") {
+	def dispatch(peer: Peer) = peer.receive(this)
+	override def attributes = "key" :: super.attributes
 	def key = bigInt("key")
 }
-class Broadcast extends PeerToSpaceMessage("broadcast")
-class Unicast extends PeerToSpaceMessage("unicast")
+class Broadcast extends PeerToSpaceMessage("broadcast") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class Unicast extends PeerToSpaceMessage("unicast") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
 class DelegateDirect extends PeerToSpaceMessage("delegate-direct") {
+	def dispatch(peer: Peer) = peer.receive(this)
+	override def attributes = "receiver" :: super.attributes
 	def receiver = bigInt("receiver")
 }
-class SpaceToPeerMessage(name: String) extends TopicSpaceMessage(name) {
+abstract class SpaceToPeerMessage(name: String) extends TopicSpaceMessage(name) {
+	override def attributes = "sender" :: super.attributes
 	def sender = bigInt("sender")
 }
-class DelegatedDirect extends SpaceToPeerMessage("delegated-direct")
-class DelegatedDHT extends SpaceToPeerMessage("delegated-dht")
-class DelegatedBroadcast extends SpaceToPeerMessage("delegated-broadcast")
-class DelegatedUnicast extends SpaceToPeerMessage("delegated-unicast")
+class DelegatedDirect extends SpaceToPeerMessage("delegated-direct") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class DelegatedDHT extends SpaceToPeerMessage("delegated-dht") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class DelegatedBroadcast extends SpaceToPeerMessage("delegated-broadcast") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}
+class DelegatedUnicast extends SpaceToPeerMessage("delegated-unicast") {
+	def dispatch(peer: Peer) = peer.receive(this)
+}

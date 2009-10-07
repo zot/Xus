@@ -26,6 +26,7 @@ import scala.actors.Exit
 import scala.actors.Actor
 import scala.actors.DaemonActor
 import scala.actors.Actor._
+import scala.collection.JavaConversions
 import scala.collection.immutable.Stream
 import java.io.Closeable
 import java.io.ByteArrayInputStream
@@ -70,32 +71,8 @@ object Util {
 		}
 	}
 	val xusVocabulary = new Vocabulary {
-		scala.collection.JavaConversions.asSet(elements.asInstanceOf[java.util.Set[QName]]) ++ (Array[String](
-			"challenge",
-			"challenge-response",
-			"completed",
-			"failed",
-			"direct",
-			"delegate-direct",
-			"broadcast",
-			"unicast",
-			"dht",
-			"delegated-direct",
-			"delegated-broadcast",
-			"delegated-unicast",
-			"delegated-dht"
-		) map {QName.valueOf(_)})
-		scala.collection.JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ (Array[String](
-			"token",
-			"msgid",
-			"requestid",
-			"challengetoken",
-			"space",
-			"topic",
-			"sender",
-			"sig",
-			"publickey"
-		) map {QName.valueOf(_)})
+		JavaConversions.asSet(elements.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.map(msg => QName.valueOf(msg.nodeName))
+		JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.toSeq.flatMap(_.attributes).removeDuplicates.sortWith((a,b) => a < b).map(QName.valueOf(_))
 	}
 
 	def randomInt(range: Int) = rand.nextInt(range)

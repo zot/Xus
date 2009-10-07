@@ -23,34 +23,6 @@ import Util._
 
 object Peer {
 	val emptyProps = PMap[String, Property]()
-	val dispatchers = Map(
-			"challenge" -> prep(new Challenge()) {_.receive(_)},
-			"challenge-response" -> prep(new ChallengeResponse()) {_.receive(_)},
-			"completed" -> prep(new Completed()) {_.receive(_)},
-			"failed" -> prep(new Failed()) {_.receive(_)},
-			"direct" -> prep(new Direct()) {_.receive(_)},
-			"delegate-direct" -> prep(new DelegateDirect()) {_.receive(_)},
-			"broadcast" -> prep(new Broadcast()) {_.receive(_)},
-			"unicast" -> prep(new Unicast()) {_.receive(_)},
-			"dht" -> prep(new DHT()) {_.receive(_)},
-			"delegated-direct" -> prep(new DelegatedDirect()) {_.receive(_)},
-			"delegated-broadcast" -> prep(new DelegatedBroadcast()) {_.receive(_)},
-			"delegated-unicast" -> prep(new DelegatedUnicast()) {_.receive(_)},
-			"delegated-dht" -> prep(new DelegatedDHT()) {_.receive(_)}
-//			new Challenge()(_.receive(_)),
-//			new ChallengeResponse()(_.receive(_)),
-//			new Completed() (_.receive(_)),
-//			new Failed() (_.receive(_)),
-//			new Direct() (_.receive(_)),
-//			new DelegateDirect() (_.receive(_)),
-//			new Broadcast() (_.receive(_)),
-//			new Unicast() (_.receive(_)),
-//			new DHT() (_.receive(_)),
-//			new DelegatedDirect() (_.receive(_)),
-//			new DelegatedBroadcast() (_.receive(_)),
-//			new DelegatedUnicast() (_.receive(_)),
-//			new DelegatedDHT() (_.receive(_))
-	)
 	implicit val emptyHandler = (r: Response) => ()
 	implicit val emptyConnectBlock = () => ()
 	implicit def hashMapToPropertyMap(m: PMap[String,Property]) = new {
@@ -59,16 +31,6 @@ object Peer {
 
 			m.+(key -> new Property(key, value, persist))
 		}
-	}
-	
-	def p[M <: Message](name: String, msg: => M)(block: (Peer, M) => Any) = name -> prep(msg)(block)
-	def prep[M <: Message](msg: => M)(block: (Peer, M) => Any) = {(con: PeerConnection, node: Node) =>
-		val m = msg
-
-		m.set(con, node)
-		block(con.peer, m)
-		con.peer.received(m)
-		m
 	}
 }
 class WaitBlock(block: => Any) {
@@ -132,12 +94,33 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		else if (wait) inputActor !? new WaitBlock(block)
 		else inputActor ! (()=>block)
 	}
-	def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
-		dispatch(peerConnections(con), parse(str))
+	def handleInput(scon: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
+		val con = peerConnections(scon)
+		val node = parse(str)
+
+		for (msg <- node match {
+			case <signature>{n @ <challenge-response/>}</signature> => Protocol.messageMap.get(n.label.toLowerCase)
+			case <challenge/> => Protocol.messageMap.get(node.label.toLowerCase)
+			case _ =>
+				if (!con.authenticated) {
+					val msg = new Failed()
+					msg.set(null, node)
+					con.failed(msg, "Not authenticated")
+					con.close
+					println("Connection did not validate: "+con+", msg: "+node)
+					None
+				} else {
+					Protocol.messageMap.get(node.label.toLowerCase)
+				}
+		}) {
+			val m = msg.copy
+
+			m.set(con, node)
+			m.dispatch(this)
+			received(m)
+		}
 	}
-	def shutdown {
-		inputActor ! 0
-	}
+	def shutdown = inputActor ! 0
 	def onResponseDo[M <: Message](msg: M, wait: Boolean = true)(block: (Response)=>Any): M = {
 		inputDo(primOnResponseDo(msg, block), wait)
 		msg
@@ -186,12 +169,11 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		serialize(node, bytes)
 //		println("sending packet ["+bytes.size+"], "+node)
 		// test serialization
-		val parseResult = toXML(parse(new OpenByteArrayInputStream(bytes.byteArray, 0, bytes.size)))
-		if (parseResult != toXML(node)) {
-			Console.err.println("Error serializing node.\n input: "+toXML(node)+"\noutput: "+parseResult)
-		}
+//		val parseResult = toXML(parse(new OpenByteArrayInputStream(bytes.byteArray, 0, bytes.size)))
+//		if (parseResult != toXML(node)) {
+//			Console.err.println("Error serializing node.\n input: "+toXML(node)+"\noutput: "+parseResult)
+//		}
 		con.send(bytes.byteArray, 0, bytes.size)
-		bytes.reset
 		msg
 	}
 	///////////////////////////
@@ -212,20 +194,6 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	def join(space: Int, topic: Int, con: PeerConnection): TopicConnection = join(new TopicConnection(space, topic, con))
 	def join[C <: TopicConnection](con: C): C = con.join
-	def dispatch(con: PeerConnection, node: Node) = (node match {
-		case <signature>{n @ <challenge-response/>}</signature> => dispatchers(n.label.toLowerCase)
-		case <challenge/> => dispatchers(node.label.toLowerCase)
-		case _ =>
-			if (!con.authenticated) {
-				val msg = new Failed()
-				msg.set(null, node)
-				con.failed(msg, "Not authenticated")
-				con.close
-				(con: PeerConnection, node: Node) => println("Connection did not validate: "+con+", msg: "+node)
-			} else {
-				dispatchers(node.label.toLowerCase)
-			}
-	})(con, node)
 	def publicKey = myKeyPair.getPublic
 	def privateKey = myKeyPair.getPrivate
 	def keyPair = myKeyPair
@@ -243,18 +211,6 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	///////////////////////////
 	// SimpyPacketPeerAPI
 	///////////////////////////
-//	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte], offset: Int, length: Int) {
-//		val parser = new SAXDocumentParser
-//		val fac = new NoBindingFactoryAdapter
-//
-//		parser.setContentHandler(fac)
-//		try {
-//			parser.parse(new ByteArrayInputStream(bytes, offset, length))
-//		} catch {
-//			case x: Exception => x.printStackTrace
-//		}
-//		dispatch(peerConnections(con), fac.rootElem)
-//	}
 	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte], offset: Int, length: Int) {
 		receiveInput(con, bytes.slice(offset, offset + length))
 	}

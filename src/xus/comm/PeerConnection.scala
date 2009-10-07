@@ -102,6 +102,5 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 		}
 		peer.send(con, msg, node)
 	}
-//	def sign(node: Node) = <signature sig={str(sign(keyPair.getPrivate, node.toString.toByteArray))}>{node}</signature>
 	def sign(node: Node) = <signature sig={str(Util.sign(node, peer.privateKey))} publickey={str(peer.publicKey)}>{node}</signature>
 }

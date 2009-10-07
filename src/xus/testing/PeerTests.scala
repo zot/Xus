@@ -251,7 +251,6 @@ class TestPeer(name: String) extends Peer(name) {
 	val events = scala.collection.mutable.ArrayBuffer[Any]()
 	var lastBytes: Sequence[Byte] = null
 	var badBytes = Set[Array[Byte]]()
-	var badNode = false
 	var topic: TopicConnection = null
 	
 	genId
@@ -270,15 +269,8 @@ class TestPeer(name: String) extends Peer(name) {
 	override def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) = {
 		if (badBytes(str.bytes)) {
 			badBytes.remove(str.bytes)
-			badNode = true
+			println("Duplicate input: " + parse(str))
 		}
 		super.handleInput(con, str)
-	}
-	override def dispatch(con: PeerConnection, node: Node) = {
-		if (badNode) {
-			badNode = false
-			println("Duplicate input: " + node)
-		}
-		super.dispatch(con, node)
 	}
 }
