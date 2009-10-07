@@ -12,14 +12,16 @@ import scala.xml.Null
 import scala.xml.Text
 import scala.xml.Atom
 import scala.xml.Document
-import scala.xml.ProcInstr
+import scala.xml.Group
 import scala.xml.Utility
 import scala.xml.MetaData
+import scala.xml.ProcInstr
 import scala.xml.EntityRef
 import scala.xml.Comment
+import scala.xml.UnprefixedAttribute
 import scala.xml.NamespaceBinding
 import scala.xml.SpecialNode
-import scala.xml.Group
+import scala.xml.parsing.NoBindingFactoryAdapter
 import scala.actors.Exit
 import scala.actors.Actor
 import scala.actors.DaemonActor
@@ -33,6 +35,7 @@ import java.security._
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import javax.xml.namespace.QName
+import com.sun.xml.internal.fastinfoset.sax.SAXDocumentParser
 import com.sun.xml.internal.fastinfoset.QualifiedName
 import com.sun.xml.internal.fastinfoset.sax.AttributesHolder;
 import com.sun.xml.internal.fastinfoset.QualifiedName;
@@ -161,6 +164,22 @@ object Util {
 		serialize(node, serializer)
 		serializer.endDocument()
 	}
+	def parse(str: OpenByteArrayInputStream) = {
+		val parser = new SAXDocumentParser
+		val fac = new NoBindingFactoryAdapter
+		val mem = str.memento
+
+		parser.setContentHandler(fac)
+		parser.setVocabulary(new ParserVocabulary(xusVocabulary))
+		try {
+			parser.parse(str)
+		} catch {
+		case x: Exception =>
+			Console.err.println("Error parsing stream pos = "+mem._1+", count = "+mem._2+", buf size = "+mem._3.length)
+			x.printStackTrace
+		}
+		fac.rootElem
+	}
 	implicit def happyCloseable[T <: Closeable](stream: T) = new {
 		def closeAfter(block: (T) => Any) {
 			try {
@@ -233,6 +252,7 @@ object Util {
 		rsa.update(xml.getBytes, 0, xml.length)
 		rsa.verify(sig)
 	}
+	/** sorting also downcases attribute names */
 	def toXML(
 	    x: Node,
 	    pscope: NamespaceBinding = TopScope,
@@ -240,6 +260,7 @@ object Util {
 	    stripComments: Boolean = false,
 	    decodeEntities: Boolean = true,
 	    preserveWhitespace: Boolean = true,
+	    sort: Boolean = true,
 	    minimizeTags: Boolean = false): StringBuilder = {
 		x match {
 		case c: Comment if !stripComments => c buildString sb
@@ -249,7 +270,7 @@ object Util {
 			// print tag with namespace declarations
 			sb.append('<')
 			x.nameToString(sb)
-			if (x.attributes ne null) sortedAttributes(x).buildString(sb)
+			if (x.attributes ne null) (if (sort) sortedAttributes(x) else x.attributes).buildString(sb)
 			x.scope.buildString(sb, pscope)
 			if (x.child.isEmpty && minimizeTags)
 				// no children, so use short form: <xyz .../>
@@ -264,7 +285,7 @@ object Util {
 			}
 		}
 	}
-	def sortedAttributes(node: Node) = node.attributes.toSeq.sortWith((a,b)=>a.key < b.key).foldRight(Null.asInstanceOf[MetaData]) {(attr, next) => attr.copy(next)}
+	def sortedAttributes(node: Node) = node.attributes.toSeq.sortWith((a,b)=>a.key < b.key).foldRight(Null.asInstanceOf[MetaData]) {(attr, next) => new UnprefixedAttribute(attr.key.toLowerCase, attr.value, next)}
 	private def isAtomAndNotText(x: Node) = x.isAtom && !x.isInstanceOf[Text]
 	def sequenceToXML(
 			children: Seq[Node],

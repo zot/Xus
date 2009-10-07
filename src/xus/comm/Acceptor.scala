@@ -14,7 +14,7 @@ import scala.collection.mutable.{Map => MMap}
 
 object Acceptor {
 	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
-		peer.peerConnections(peer.addConnection(newCon)).challenge(randomInt(1000000000).toString)
+		peer.addConnection(newCon).challenge(randomInt(1000000000).toString)
 	}
 	def listenCustom(port: Int, peer: SimpyPacketPeerAPI)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
 		listen(port) {chan =>

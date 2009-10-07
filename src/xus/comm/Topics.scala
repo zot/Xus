@@ -15,10 +15,10 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	var joined = false
 
 	def join: this.type = {
-		peer.topicsJoined((space, topic)) = this
+		peer.inputDo(peer.topicsJoined += (space, topic) -> this)
 		if (owner == peer.selfConnection) {
 			joined = true
-			peer.topicsOwned.get((space, topic)).foreach(_.addMember(peer.selfConnection))
+			peer.ownedTopic(space, topic).foreach(_.addMember(peer.selfConnection))
 		} else {
 			owner.direct(<xus-join space={str(space)} topic={str(topic)} pubKey={peer.publicKeyString}/>) {m =>
 //				println("JOINED GROUP")
@@ -52,19 +52,18 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	// hooks
 	def receiveDeleteProp(msg: DelegatedBroadcast, name: String) {
 		for {
-			prop <- peer.props(propsKey).remove(name)
+			prop <- peer.deleteProp(propsKey, name)
 			if prop.persist
-			topic <- peer.topicsOwned.get((space, topic))
-		} {
-				peer.storeProps(propsKey)
-		}
+			topic <- peer.ownedTopic(space, topic)
+		} peer.storeProps(propsKey)
 	}
 	def receiveSetProp(msg: DelegatedBroadcast, name: String, value: String, persist: Boolean) {
-		peer.props(propsKey)(name, persist) = value
+		peer.setProp(propsKey, name, value, persist)
 		// only owners really need to persist topic properties
-		if (persist && peer.topicsOwned.contains((space, topic))) {
-			peer.storeProps(propsKey)
-		}
+		for {
+			topic <- peer.ownedTopic(space, topic)
+			if persist
+		} peer.storeProps(propsKey)
 	}
 	def receive(msg: DelegatedBroadcast) {
 		msg.payload match {
