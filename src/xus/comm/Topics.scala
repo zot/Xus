@@ -18,7 +18,7 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		peer.inputDo(peer.topicsJoined += (space, topic) -> this)
 		if (owner == peer.selfConnection) {
 			joined = true
-			peer.ownedTopic(space, topic).foreach(_.addMember(peer.selfConnection))
+			peer.inputDo(peer.ownedTopic(space, topic).foreach(_.addMember(peer.selfConnection)))
 		} else {
 			owner.direct(<xus-join space={str(space)} topic={str(topic)} pubKey={peer.publicKeyString}/>) {m =>
 //				println("JOINED GROUP")
@@ -29,10 +29,10 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		}
 		this
 	}
-	def setprop(name: String, value: String, persist: Boolean) =
-		owner.broadcast(space, topic, <xus-setprop name={name} value={value} persist={persist.toString}/>)
-	def delprop(name: String, value: String) =
-		owner.broadcast(space, topic, <xus-delprop name={name}/>)
+	def setprop(name: String, value: String, persist: Boolean)(implicit block: (Response) => Unit) =
+		broadcast(<xus-setprop name={name} value={value} persist={persist.toString}/>)(block)
+	def delprop(name: String, value: String)(implicit block: (Response) => Unit) =
+		broadcast(<xus-delprop name={name}/>)(block)
 
 	//
 	// peer-to-peer messages
@@ -123,12 +123,12 @@ class Topic(val space: Int, val topic: Int, val peer: Peer) {
 		members = members.filter(_ != con)
 	}
 	def process(broadcast: Broadcast) =
-		members.foreach(_.broadcast(broadcast.sender, broadcast.space, broadcast.topic, broadcast.node.child, broadcast.msgId))
-	def process(unicast: Unicast) = delegateResponse(members(randomInt(members.length)).unicast(unicast.sender, unicast.space, unicast.topic, unicast.node.child, unicast.msgId))
-	def process(dht: DHT) = delegateResponse(findDht(dht).dht(dht.sender, dht.space, dht.topic, dht.key, dht.node.child, dht.msgId))
+		members.foreach(_.delegatedBroadcast(broadcast.sender, broadcast.msgId, broadcast.space, broadcast.topic, broadcast.node.child))
+	def process(unicast: Unicast) = delegateResponse(members(randomInt(members.length)).delegatedUnicast(unicast.sender, unicast.msgId, unicast.space, unicast.topic, unicast.node.child))
+	def process(dht: DHT) = delegateResponse(findDht(dht).delegatedDht(dht.sender, dht.msgId, dht.space, dht.topic, dht.key, dht.node.child))
 	def process(delegate: DelegateDirect) = {
 		members.find(_.peerId == delegate.receiver) match {
-		case Some(con) => delegateResponse(con.delegatedDirect(delegate.sender, delegate.space, delegate.topic, delegate.node.child, delegate.msgId))
+		case Some(con) => delegateResponse(con.delegatedDirect(delegate.sender, delegate.msgId, delegate.space, delegate.topic, delegate.node.child))
 		case None => delegate.con.failed(delegate.msgId, ())
 		}
 	}

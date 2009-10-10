@@ -32,11 +32,13 @@ object SimpyPacketConnection {
 	import Connection._
 	
 	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
-	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection =
+		this(host, port, peer, (chan, peer, optAcc) => this(chan, peer, None))(conBlock)
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI, create: (SocketChannel, SimpyPacketPeerAPI, Option[Acceptor]) => SimpyPacketConnection)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
 		val chan = SocketChannel.open
-		
+			
 		chan.configureBlocking(false)
-		val con = addConnection(this(chan, peer, None))
+		val con = addConnection(create(chan, peer, None))
 		conBlock(con)
 		chan.connect(new InetSocketAddress(host, port))
 		con

@@ -76,17 +76,17 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	// space-to-peer messages
 	// these are delegated from other peers
 	//
-	def broadcast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(new DelegatedBroadcast, <delegated-broadcast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-broadcast>)
+	def delegatedBroadcast(sender: BigInt, senderMsgId: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1) =
+		send(new DelegatedBroadcast, <delegated-broadcast sender={str(sender)} sendermsgid={str(senderMsgId)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-broadcast>)
 
-	def unicast(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(new DelegatedUnicast, <delegated-unicast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-unicast>)
+	def delegatedUnicast(sender: BigInt, senderMsgId: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1) =
+		send(new DelegatedUnicast, <delegated-unicast sender={str(sender)} sendermsgid={str(senderMsgId)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-unicast>)
 
-	def dht(sender: BigInt, space: Int, topic: Int, key: BigInt, message: Any, msgId: Int) =
-		send(new DelegatedDHT, <delegated-dht sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-dht>)
+	def delegatedDht(sender: BigInt, senderMsgId: Int, space: Int, topic: Int, key: BigInt, message: Any, msgId: Int = -1) =
+		send(new DelegatedDHT, <delegated-dht sender={str(sender)} space={str(space)} sendermsgid={str(senderMsgId)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-dht>)
 
-	def delegatedDirect(sender: BigInt, space: Int, topic: Int,  message: Any, msgId: Int) =
-		send(new DelegatedDirect, <delegated-direct sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-direct>)
+	def delegatedDirect(sender: BigInt, senderMsgId: Int, space: Int, topic: Int,  message: Any, msgId: Int = -1) =
+		send(new DelegatedDirect, <delegated-direct sender={str(sender)} sendermsgid={str(senderMsgId)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{message}</delegated-direct>)
 
 	//
 	// implementation

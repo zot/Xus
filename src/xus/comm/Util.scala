@@ -208,7 +208,7 @@ object Util {
 		val a = new DaemonActor {
 			def act() = body
 //			override final val scheduler: IScheduler = Actor.parentScheduler
-			override def toString = "DaemonActor " + name
+			override def toString = "DaemonActor(" + name + ")@" + System.identityHashCode(this)
 		}
 		a.start()
 		a

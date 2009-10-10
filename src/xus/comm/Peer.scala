@@ -23,8 +23,10 @@ import Util._
 
 object Peer {
 	val emptyProps = PMap[String, Property]()
+//	var waitBlockNum = 0
 	implicit val emptyHandler = (r: Response) => ()
 	implicit val emptyConnectBlock = () => ()
+
 	implicit def hashMapToPropertyMap(m: PMap[String,Property]) = new {
 		def + (tuple: ((String, Boolean), String)) = {
 			val ((key, persist), value) = tuple
@@ -34,7 +36,16 @@ object Peer {
 	}
 }
 class WaitBlock(block: => Any) {
-	def apply() = block
+//	val num = Peer.waitBlockNum
+//	Peer.waitBlockNum += 1
+//
+//	println(this)
+//
+	def apply() = {
+//		println("Executing wait block: "+num)
+		block
+	}
+//	override def toString = "WaitBlock: "+num
 }
 class Peer(name: String) extends SimpyPacketPeerAPI {
 	import Peer._
@@ -50,53 +61,52 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	var topicsJoined = PMap[(Int,Int), TopicConnection]()
 	var props = PMap("prefs" -> PMap[String, Property]())
 	var myKeyPair: KeyPair = null
-	val selfConnection = addConnection(new DirectSimpyPacketConnection(this))
+	val selfConnection = createSelfConnection
 	val inputActor = daemonActor("Peer input") {
 		self link Util.actorExceptions
 		loop {
-			react {
-			case block: WaitBlock =>
-				block()
-				sender ! ()
+			react {//case x => println("input received: "+x); x match {
+			case block: WaitBlock => sender ! block()
 			case block: (() => Any) => block()
+//			case (con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) => println("stream input"); handleInput(con, str); println("Done with input")
 			case (con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) => handleInput(con, str)
 			case 0 => exit
+			case any => new Exception("unknown input to peer's inputActor: " + any).printStackTrace
+//			}
 			}
 		}
 	}
-	val outputActor = daemonActor("Peer output") {
-		self link Util.actorExceptions
-		loop {
-			react {
-			case (con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) => handleInput(con, str)
-			case 0 => exit
-			}
-		}
-	}
-	
+
 	selfConnection.authenticated = true
 
-	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
-		//split this creation into steps so the waiter is in place before the connection initiates
-		val pcon = new PeerConnection(null, this)
-
-		if (connectBlock != emptyHandler) {
-			inputDo(waiters += ((pcon, 0) -> connectBlock))
-		}
-		SimpyPacketConnection(host, port, this) {con =>
-			pcon.con = con
-			peerConnections += con -> pcon
-		}
-		pcon
-	}
+	def createSelfConnection = addConnection(new DirectSimpyPacketConnection(this))
 	def inputDo(block: => Any, wait: Boolean = true) = {
 		if (self == inputActor) block
 		else if (wait) inputActor !? new WaitBlock(block)
+//		else if (wait) {
+//			val wb = new WaitBlock(block)
+//			val result = inputActor !? wb
+//			println("finished wait block "+wb.num)
+//			result
+//		}
 		else inputActor ! (()=>block)
 	}
+	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+			//split this creation into steps so the waiter is in place before the connection initiates
+			val pcon = new PeerConnection(null, this)
+			
+			if (connectBlock != emptyHandler) {
+				inputDo(waiters += ((pcon, 0) -> connectBlock))
+			}
+			SimpyPacketConnection(host, port, this) {con =>
+			pcon.con = con
+			peerConnections += con -> pcon
+			}
+			pcon
+	}
 	def handleInput(scon: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
-		val con = peerConnections(scon)
 		val node = parse(str)
+		val con = peerConnections(scon)
 
 		for (msg <- node match {
 			case <signature>{n @ <challenge-response/>}</signature> => Protocol.messageMap.get(n.label.toLowerCase)
@@ -121,21 +131,14 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		}
 	}
 	def shutdown = inputActor ! 0
-	def onResponseDo[M <: Message](msg: M, wait: Boolean = true)(block: (Response)=>Any): M = {
-		inputDo(primOnResponseDo(msg, block), wait)
-		msg
-	}
-	/**
-	 * only executed by inputActor
-	 */
-	private def primOnResponseDo[M <: Message](msg: M, block: (Response)=>Any): M = {
-		waiters += (msg.con, msg.msgId) -> (waiters.get((msg.con, msg.msgId)) match {
+	def onResponseDo[M <: Message](msg: M)(block: (Response)=>Any): M = {
+		inputDo(waiters += (msg.con, msg.msgId) -> (waiters.get((msg.con, msg.msgId)) match {
 		case Some(inner) => {r =>
 			inner(r)
 			block(r)
 		}
 		case None => block
-		})
+		}))
 		msg
 	}
 	def closed(con: SimpyPacketConnectionAPI) {
@@ -267,16 +270,16 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	// delegate broadcasting, etc to the topic
 	def receive(msg: Broadcast) {
 		msg.payload match {
-		case Seq(n @ <xus-setprop/>) =>
+		case Seq(<xus-setprop/>) =>
 			for {
-				spaceN <- strOpt(n, "space")
-				topicN <- strOpt(n, "topic")
+				spaceN <- strOpt(msg.node, "space")
+				topicN <- strOpt(msg.node, "topic")
 				topic <- ownedTopic(spaceN.toInt, topicN.toInt)
 			} topic.setPropRequest(msg)
-		case Seq(n @ <xus-delprop/>) =>
+		case Seq(<xus-delprop/>) =>
 			for {
-				spaceN <- strOpt(n, "space")
-				topicN <- strOpt(n, "topic")
+				spaceN <- strOpt(msg.node, "space")
+				topicN <- strOpt(msg.node, "topic")
 				topic <- ownedTopic(spaceN.toInt, topicN.toInt)
 			} topic.deletePropRequest(msg)
 		case _ => ownedTopic(msg.space, msg.topic).foreach(_.process(msg))

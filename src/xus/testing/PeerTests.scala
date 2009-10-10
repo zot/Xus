@@ -30,19 +30,22 @@ class LoggerStats {
 	val eventSignal = new Object
 	val logger = daemonActor("Test Logger") {
 		self link Util.actorExceptions
+//		println("NEW LOGGER: " + self)
 		loop {
 			react {
 			case i: Int => outstandingEvents += i
+//				println(self+" increased outstanding events to "+outstandingEvents)
 			case (peer: TestPeer, msg: Message) =>
 //				println("event, " + peer + ": " + msg.getClass.getSimpleName + ", msgId = " + msg.msgId)
 				Console.flush
 				peer.events += msg
 				eventSignal synchronized {
 					outstandingEvents -= 1
+//					println(self+" decreased outstanding events to "+outstandingEvents)
 					totalEvents += 1
 					if (outstandingEvents < 0) {
-						errors ::= new Exception("BAD EVENT COUNT!")
-						errors(0).printStackTrace
+						errors ::= new Exception("BAD EVENT COUNT: "+outstandingEvents)
+//						errors(0).printStackTrace
 					}
 					if (outstandingEvents <= 0) {
 						counts ::= outstandingEvents
@@ -59,15 +62,25 @@ object PeerTests {
 	val PORT = 9999
 	var accepting = false
 	var direct = true
+	var errors = List[Throwable]()
+	var exceptions = List[Throwable]()
 	var stats = new LoggerStats
 	var mainActor: Actor = null
 	val lock = new Object
 	var done = false
-	var exceptions = MList[Throwable]()
+	var connectionBlock: (SocketChannel, Option[Acceptor]) => CheckingConnection = null
+	
+	def newStats = {
+		stats = new LoggerStats
+		stats
+	}
 
 	def main(args: Array[String]) {
+		var maxWaitUntil = System.currentTimeMillis + 15000
+		val writer = new java.io.PrintWriter(Console.err)
+
 		Util.actorExceptionBlock = {(from: Actor, ex: Exception) =>
-			exceptions.add(ex)
+			exceptions = ex :: exceptions
 		}
 		lock synchronized {
 			daemonActor("Tests") {
@@ -75,26 +88,27 @@ object PeerTests {
 				mainActor = self
 				try {
 					direct = true
-					val failures1 = org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures
-					stats = new LoggerStats
+					val failures1 = errors ++ org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.map(_.getException)
+					errors = Nil
 					direct = false
-					val failures2 = org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures
+					val failures2 = errors ++ org.junit.runner.JUnitCore.runClasses(classOf[PeerTests]).getFailures.map(_.getException)
 					Xus.shutdown
 					if (exceptions.isEmpty && failures1.isEmpty && failures2.isEmpty) {
 						println("Success")
 					} else {
 						if (!failures1.isEmpty) {
-							println("Direct failures...")
-							failures1.foreach(f => Console.err.println(f.getTrace))
+							writer.println("Direct failures...")
+							failures1.foreach(f => f.printStackTrace(writer))
 						}
 						if (!failures2.isEmpty) {
-							println("Socket failures...")
-							failures2.foreach(f => Console.err.println(f.getTrace))
+							writer.println("Socket failures...")
+							failures2.foreach(f => f.printStackTrace(writer))
 						}
-						if (!exceptions.isEmpty) {
-							println("General exceptions...")
-							exceptions.foreach(_.printStackTrace)
-						}
+//						if (!exceptions.isEmpty) {
+//							writer.println("General exceptions...")
+//							exceptions.foreach(_.printStackTrace(writer))
+//						}
+						writer.flush
 					}
 					lock synchronized {
 						done = true
@@ -105,58 +119,87 @@ object PeerTests {
 				}
 			}
 			while (!done) {
-				lock.wait(1000)
+				val wtime = maxWaitUntil - System.currentTimeMillis
+
+				if (wtime > 0) lock.wait(wtime)
+				else done = true
+			}
+			if (!exceptions.isEmpty) {
+				writer.println("General exceptions...")
+				exceptions.foreach(_.printStackTrace(writer))
+				writer.flush
 			}
 		}
 	}
 }
 class PeerTests {
-	import PeerTests._
-
-	val stats = PeerTests.stats
+	var stats: LoggerStats = null
 	var owner: TestPeer = null
 	var member1: TestPeer = null
 
 	@Before def setup {
+//		println("SETUP: "+this)
+		PeerTests.connectionBlock = {(chan, optAcceptor) => 
+			val con = new CheckingConnection(chan, owner, optAcceptor)
+	
+			owner.addConnection(con)
+			owner.peerConnections(con).challenge(randomInt(1000000000).toString)
+			con
+		}
+		stats = new LoggerStats
+		PeerTests.stats = stats
 		owner = newOwner
 		member1 = newMember("member 1")
 	}
 
-	@Test def testPeerIds {
+	@Test def testMessaging {
+//		println("testMessaging")
 		assertEquals(member1.peerId, member1.selfConnection.peerId)
 		assertEquals(member1.peerId, digestInt(member1.publicKey.getEncoded))
 		assertEquals(owner.peerId, owner.selfConnection.peerId)
 		assertEquals(owner.peerId, digestInt(owner.publicKey.getEncoded))
-	}
-	@Test def testMessaging {
-		for (i <- 1 to 100) {
+		for (i <- 1 to 3) {
 			stats.logger ! 2
 			member1.topic.broadcast("hello there")
 		}
 		stats.logger ! 2
 		member1.topic.unicast("uni")
 		member1.topic.dht(5000, "dht")
+		stats.logger ! 2
+		member1.topic.setprop("a", "b", false) {msg =>
+			println("set a = b")
+		}
+		waitForCompletion
+//		println("DONE WITH MESSAGING TEST, outstandingEvents: "+stats.outstandingEvents)
+	}
+//	@Test def testPropertyPersistence {
+//		println("testPropertyPersistence")
+//		fail("test property persistence not implemented yet")
+//		waitForCompletion
+//	}
+	def waitForCompletion {
 		var oldCount = -1
 		var done = false
-
+		
 		while (!done) {
 			stats.eventSignal synchronized {
 				if (stats.outstandingEvents == 0) {
 					done = true
+//					println("finished with no outstanding events")
 				} else {
+					val startWait = System.currentTimeMillis
 					stats.eventSignal.wait(1000)
-					if (oldCount == stats.totalEvents) {
-						done = true
-//						println("outstanding events: "+stats.outstandingEvents+", totalEvents: "+stats.totalEvents)
-					} else {
+					if (oldCount != stats.totalEvents) {
 						oldCount = stats.totalEvents
+					} else if (System.currentTimeMillis - startWait >= 1000) {
+						done = true
+//						println("finished with no new events, outstanding events: "+stats.outstandingEvents+", totalEvents: "+stats.totalEvents)
 					}
 				}
 			}
 		}
 		assertEquals(0, stats.outstandingEvents)
 	}
-
 
 	def newConnection(connection: SocketChannel, peer: Peer, acceptor: Option[Acceptor]) = new CheckingConnection(connection, peer, acceptor)
 
@@ -178,43 +221,41 @@ class PeerTests {
 	def connect(peer1: TestPeer, peer2: TestPeer) = {
 		var pcon: PeerConnection = null
 
-		if (direct) {
-			val con = new DirectSimpyPacketConnection(peer1, peer2)
+		if (PeerTests.direct) {
+			val con = new DirectSimpyPacketConnection(peer1, new DirectSimpyPacketConnection(peer2) with LastMsgId) with LastMsgId
 			peer2.addConnection(con.otherEnd)
 			peer1.addConnection(con)
 			pcon = peer1.peerConnections(con)
-			peer1.waiters((pcon, 0)) = {mainActor ! _}
+			peer1.waiters((pcon, 0)) = {PeerTests.mainActor ! _}
 			peer2.peerConnections(con.otherEnd).challenge(randomInt(1000000000).toString)
 		} else {
 			// this is a hack
 			// maybe the acceptor should be changed to use the current owner instead of peer2
 			// or else we need to shut down the acceptor in an @after method
-			if (!accepting) {
-				accepting = true;
-				Acceptor.listen(PORT) {chan =>
+			if (!PeerTests.accepting) {
+				PeerTests.accepting = true;
+				Acceptor.listen(PeerTests.PORT) {chan =>
 					new Acceptor(chan, peer2) {
-						override def newConnection(connection: SocketChannel) = {
-							val con = PeerTests.this.newConnection(connection, peer2, Some(this))
-
-							peer2.addConnection(con)
-							peer2.peerConnections(con).challenge(randomInt(1000000000).toString)
-							con
-						}
+						override def newConnection(connection: SocketChannel) = PeerTests.connectionBlock(connection, Some(this))
 					}
 				}
 			}
-			pcon = peer1.connect(HOST, PORT) {mainActor ! _}
+			pcon = peer1.connect(PeerTests.HOST, PeerTests.PORT) {PeerTests.mainActor ! _}
 		}
 		peer1.ownerCon = pcon
 		var connected = false
-		mainActor.receiveWithin(1000) {
+		PeerTests.mainActor.receiveWithin(1000) {
 			case x => connected = true // println("CONNECTED "+peer1)
 		}
 		assertTrue(connected)
 		pcon
 	}
 }
-class CheckingConnection(connection: SocketChannel, peer: Peer, acceptor: Option[Acceptor]) extends SimpyPacketConnection(connection, peer, acceptor) {
+trait LastMsgId {
+	var lastMsgId = -1
+	var msg: Message = null
+}
+class CheckingConnection(connection: SocketChannel, peer: Peer, acceptor: Option[Acceptor]) extends SimpyPacketConnection(connection, peer, acceptor) with LastMsgId {
 	var lastBytes: Sequence[Byte] = null
 
 	override def send(newOutput: Array[Byte], offset: Int, len: Int) {
@@ -236,14 +277,17 @@ class TestTopicConnection(space: Int, topic: Int, peer: PeerConnection) extends 
 	override def receive(msg: DelegatedBroadcast) {
 //		println(owner.peer + " received: "+msg)
 		stats.logger ! (owner.peer, msg)
+		super.receive(msg)
 	}
 	override def receive(msg: DelegatedUnicast) {
 //		println(owner.peer + " received: "+msg)
 		stats.logger ! (owner.peer, msg)
+		super.receive(msg)
 	}
 	override def receive(msg: DelegatedDHT) {
 //		println(owner.peer + " received: "+msg)
 		stats.logger ! (owner.peer, msg)
+		super.receive(msg)
 	}
 }
 class TestPeer(name: String) extends Peer(name) {
@@ -255,6 +299,7 @@ class TestPeer(name: String) extends Peer(name) {
 	
 	genId
 
+	override def createSelfConnection = addConnection(new DirectSimpyPacketConnection(this) with LastMsgId)
 	override def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte]) {
 		val newBytes = bytes.slice(0, bytes.length).toSeq
 
@@ -272,5 +317,29 @@ class TestPeer(name: String) extends Peer(name) {
 			println("Duplicate input: " + parse(str))
 		}
 		super.handleInput(con, str)
+	}
+	override def received[M <: Message](msg: M): M = {
+		val lastIdCon = msg.con.con.asInstanceOf[LastMsgId]
+
+		if (lastIdCon.lastMsgId >= msg.msgId) {
+//			println("Received message out of order.  Last received id: "+lastIdCon.lastMsgId+" current id: "+msg.msgId)
+			fail("Received message out of order.  Last message:\n"+lastIdCon.msg.node+"\nCurrent message:\n"+msg.node)
+		}
+		lastIdCon.lastMsgId = msg.msgId
+		lastIdCon.msg = msg
+		super.received(msg)
+	}
+	override def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+		//split this creation into steps so the waiter is in place before the connection initiates
+		val pcon = new PeerConnection(null, this)
+
+		if (connectBlock != Peer.emptyHandler) {
+			inputDo(waiters += ((pcon, 0) -> connectBlock))
+		}
+		SimpyPacketConnection(host, port, this, (con, peer, acc) => new CheckingConnection(con, peer.asInstanceOf[TestPeer], acc)) {con =>
+		pcon.con = con
+		peerConnections += con -> pcon
+		}
+		pcon
 	}
 }

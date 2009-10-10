@@ -121,8 +121,9 @@ class DelegateDirect extends PeerToSpaceMessage("delegate-direct") {
 	def receiver = bigInt("receiver")
 }
 abstract class SpaceToPeerMessage(name: String) extends TopicSpaceMessage(name) {
-	override def attributes = "sender" :: super.attributes
+	override def attributes = "sender" :: "sendermsgid" :: super.attributes
 	def sender = bigInt("sender")
+	def senderMsgId = bigInt("sendermsgid")
 }
 class DelegatedDirect extends SpaceToPeerMessage("delegated-direct") {
 	def dispatch(peer: Peer) = peer.receive(this)
