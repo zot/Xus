@@ -327,6 +327,10 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// properties
 	//
+	def getProp(category: String, key: String) = for {
+		p <- props.get(category)
+		prop <- p.get(key)
+	} yield prop.value
 	def setProp(category: String, key: String, value: String, persist: Boolean) {
 		inputOnly
 		props += category -> (props.getOrElse("prefs", new PMap[String, Property]()) + (key -> new Property(key, value, persist)))

@@ -29,6 +29,7 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		}
 		this
 	}
+	def getprop(name: String) = peer.getProp(propsKey, name)
 	def setprop(name: String, value: String, persist: Boolean)(implicit block: (Response) => Unit) =
 		broadcast(<xus-setprop name={name} value={value} persist={persist.toString}/>)(block)
 	def delprop(name: String, value: String)(implicit block: (Response) => Unit) =
@@ -39,15 +40,15 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	//
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def direct(message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.direct(message, msgId)(block)
+	def direct(payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.direct(payload, msgId)(block)
 
 	//
 	// peer-to-space messages
 	//
-	def broadcast(message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.broadcast(space, topic, message, msgId)(block)
-	def unicast(message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.unicast(space, topic, message, msgId)(block)
-	def dht(key: BigInt, message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.dht(space, topic, key, message, msgId)(block)
-	def delegate(peer: Int, message: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, message, msgId)(block)
+	def broadcast(payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.broadcast(space, topic, payload, msgId)(block)
+	def unicast(payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.unicast(space, topic, payload, msgId)(block)
+	def dht(key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.dht(space, topic, key, payload, msgId)(block)
+	def delegate(peer: Int, payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, payload, msgId)(block)
 
 	// hooks
 	def receiveDeleteProp(msg: DelegatedBroadcast, name: String) {
@@ -122,15 +123,43 @@ class Topic(val space: Int, val topic: Int, val peer: Peer) {
 	def removeMember(con: PeerConnection) {
 		members = members.filter(_ != con)
 	}
-	def process(broadcast: Broadcast) =
-		members.foreach(_.delegatedBroadcast(broadcast.sender, broadcast.msgId, broadcast.space, broadcast.topic, broadcast.node.child))
-	def process(unicast: Unicast) = delegateResponse(members(randomInt(members.length)).delegatedUnicast(unicast.sender, unicast.msgId, unicast.space, unicast.topic, unicast.node.child))
-	def process(dht: DHT) = delegateResponse(findDht(dht).delegatedDht(dht.sender, dht.msgId, dht.space, dht.topic, dht.key, dht.node.child))
-	def process(delegate: DelegateDirect) = {
-		members.find(_.peerId == delegate.receiver) match {
-		case Some(con) => delegateResponse(con.delegatedDirect(delegate.sender, delegate.msgId, delegate.space, delegate.topic, delegate.node.child))
-		case None => delegate.con.failed(delegate.msgId, ())
+	def process(broadcast: Broadcast) = {
+		authorize(broadcast) {
+			members.foreach(_.delegatedBroadcast(broadcast.sender, broadcast.msgId, broadcast.space, broadcast.topic, broadcast.node.child))
+			broadcast.completed("")
 		}
+	}
+	def process(unicast: Unicast) = {
+		authorize(unicast) {
+			members(randomInt(members.length)).delegatedUnicast(unicast.sender, unicast.msgId, unicast.space, unicast.topic, unicast.node.child) {
+			case c: Completed => unicast.completed(c.payload)
+			case f: Failed => unicast.failed(f.payload)
+			}
+		}
+	}
+	def process(dht: DHT) = {
+		authorize(dht) {
+			findDht(dht).delegatedDht(dht.sender, dht.msgId, dht.space, dht.topic, dht.key, dht.node.child) {
+			case c: Completed => dht.completed(c.payload)
+			case f: Failed => dht.failed(f.payload)
+			}
+		}
+	}
+	def process(delegate: DelegateDirect) = {
+		authorize(delegate) {
+			members.find(_.peerId == delegate.receiver) match {
+			case Some(con) => delegateResponse(con.delegatedDirect(delegate.sender, delegate.msgId, delegate.space, delegate.topic, delegate.node.child))
+			case None => delegate.con.failed(delegate.msgId, ())
+			}
+		}
+	}
+	/**
+	 * allow unlimited broadcasting by default
+	 * override this to fail if the message is not authorized
+	 */
+	def authorize(message: Message)(block: => Any) = {
+		if (members.contains(message.con)) block
+		else message.failed("Peer not a member of this topic")
 	}
 	// utils
 	def delegateResponse(msg: Message) = peer.onResponseDo(msg)(peer.delegateResponse(msg, _))

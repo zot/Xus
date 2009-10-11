@@ -62,6 +62,8 @@ abstract class Message(val nodeName: String) extends Cloneable {
 	def msgId = int("msgid")
 	override def toString = getClass.getSimpleName + ": " + node
 	def payload = node.child
+	def completed(payload: Any) = con.completed(this, payload)
+	def failed(payload: Any) = con.failed(this, payload)
 }
 abstract class PeerToPeerMessage(name: String) extends Message(name)
 abstract class Response(name: String) extends Message(name) {

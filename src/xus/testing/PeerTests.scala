@@ -153,11 +153,20 @@ class PeerTests {
 	}
 
 	@Test def testMessaging {
-//		println("testMessaging")
+		verifyIds
+		sendBroadcasts
+		sendPropSettings
+		testAuthorization
+		waitForCompletion
+		verifyPropSettings
+	}
+	def verifyIds {
 		assertEquals(member1.peerId, member1.selfConnection.peerId)
 		assertEquals(member1.peerId, digestInt(member1.publicKey.getEncoded))
 		assertEquals(owner.peerId, owner.selfConnection.peerId)
 		assertEquals(owner.peerId, digestInt(owner.publicKey.getEncoded))
+	}
+	def sendBroadcasts {
 		for (i <- 1 to 3) {
 			stats.logger ! 2
 			member1.topic.broadcast("hello there")
@@ -165,18 +174,22 @@ class PeerTests {
 		stats.logger ! 2
 		member1.topic.unicast("uni")
 		member1.topic.dht(5000, "dht")
+	}
+	def sendPropSettings {
 		stats.logger ! 2
 		member1.topic.setprop("a", "b", false) {msg =>
 			println("set a = b")
 		}
-		waitForCompletion
-//		println("DONE WITH MESSAGING TEST, outstandingEvents: "+stats.outstandingEvents)
 	}
-//	@Test def testPropertyPersistence {
-//		println("testPropertyPersistence")
-//		fail("test property persistence not implemented yet")
-//		waitForCompletion
-//	}
+	def verifyPropSettings {
+		assertEquals(member1.topic.getprop("a"), Some("b"))
+		assertEquals(owner.topic.getprop("a"), Some("b"))
+	}
+	def testAuthorization {
+		member1.topic.owner.broadcast(0, 0, "test") {msg =>
+		assertTrue(msg.isInstanceOf[Failed])
+		}
+	}
 	def waitForCompletion {
 		var oldCount = -1
 		var done = false
@@ -206,8 +219,9 @@ class PeerTests {
 	def newOwner = {
 		val o = new TestPeer("Owner")
 
+		o.topic = new TestTopicConnection(0, 1, o.selfConnection)
 		o.own(0, 0)
-		o.own(0, 1, new TestTopicConnection(0, 1, o.selfConnection))
+		o.own(0, 1, o.topic)
 		o
 	}
 	
