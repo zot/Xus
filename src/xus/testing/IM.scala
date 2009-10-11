@@ -26,7 +26,7 @@ object IM extends Peer("IM") {
 		val input = new EditorPane {
 			val inputKm = JTextComponent.addKeymap("input", JTextComponent.getKeymap(JTextComponent.DEFAULT_KEYMAP))
 			inputKm.addActionForKeyStroke(KeyStroke.getKeyStroke("ENTER"), Action("send") {
-				topic.broadcast(text)
+				topic.broadcast(text) {response => println("RECEIVED RESPONSE: "+response)}
 				text = ""
 			}.peer)
 			border = Swing.EtchedBorder
