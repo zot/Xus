@@ -80,29 +80,24 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	selfConnection.authenticated = true
 
 	def createSelfConnection = addConnection(new DirectSimpyPacketConnection(this))
-	def inputDo(block: => Any, wait: Boolean = true) = {
+	def inputDo(block: => Any): Any = inputDo(true)(block)
+	def inputDo(wait: Boolean)(block: => Any) = {
 		if (self == inputActor) block
 		else if (wait) inputActor !? new WaitBlock(block)
-//		else if (wait) {
-//			val wb = new WaitBlock(block)
-//			val result = inputActor !? wb
-//			println("finished wait block "+wb.num)
-//			result
-//		}
 		else inputActor ! (()=>block)
 	}
 	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
-			//split this creation into steps so the waiter is in place before the connection initiates
-			val pcon = new PeerConnection(null, this)
+		//split this creation into steps so the waiter is in place before the connection initiates
+		val pcon = new PeerConnection(null, this)
 			
-			if (connectBlock != emptyHandler) {
-				inputDo(waiters += ((pcon, 0) -> connectBlock))
-			}
-			SimpyPacketConnection(host, port, this) {con =>
-			pcon.con = con
-			peerConnections += con -> pcon
-			}
-			pcon
+		if (connectBlock != emptyHandler) {
+			inputDo(waiters += ((pcon, 0) -> connectBlock))
+		}
+		SimpyPacketConnection(host, port, this) {con =>
+		pcon.con = con
+		peerConnections += con -> pcon
+		}
+		pcon
 	}
 	def handleInput(scon: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
 		val node = parse(str)
@@ -333,7 +328,8 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	} yield prop.value
 	def setProp(category: String, key: String, value: String, persist: Boolean) {
 		inputOnly
-		props += category -> (props.getOrElse("prefs", new PMap[String, Property]()) + (key -> new Property(key, value, persist)))
+		props += category -> (props.getOrElse(category, new PMap[String, Property]()) + (key -> new Property(key, value, persist)))
+		if (persist) storeProps(category)
 	}
 	def deleteProp(category: String, key: String) = {
 		inputOnly
@@ -348,10 +344,6 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		inputDo {
 			setProp("prefs", "public", str(keyPair.getPublic), true)
 			setProp("prefs", "private", str(keyPair.getPrivate), true)
-//			if (storage != null) {
-//				println("writing public: " + prefs("public").value)
-//				println("writing private: " + prefs("private").value)
-//			}
 			storeProps("prefs")
 		}
 	}
@@ -359,8 +351,8 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		inputOnly
 		import scala.xml.NodeSeq._
 		<props name={name}>{
-			for ((_, prop) <- props.getOrElse(name, emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {case ((_, p1), (_, p2)) => p1.name < p2.name})
-				yield <prop name={prop.name} value={prop.value}/>
+			for ((name, prop) <- props.getOrElse(name, emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {case ((k1, _), (k2, _)) => k1 < k2})
+				yield <prop name={name} value={prop.value}/>
 		}</props>
 	}
 	def inputOnly = if (self != inputActor) throw new Exception("This method can only be executed in the peer's inputActor")
@@ -393,10 +385,11 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	def readStorage(f: File) {
 		inputDo {
-			storage = null
 			val str = new SetStorage(f)
+			storage = null
 			for (n <- str.nodes) useProps(n)
 			storage = str
+			if (!str.nodes.hasNext) storePrefs
 		}
 	}
 	def storeProps(name: String) {

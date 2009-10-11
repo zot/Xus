@@ -8,11 +8,13 @@ package xus.testing
 import xus.comm._
 import xus.comm.Util._
 import scala.xml.Node
+import scala.xml.persistent.SetStorage
 import scala.actors.Actor
 import scala.actors.Actor._
 import scala.actors.DaemonActor
 import scala.collection.mutable.{ArrayBuffer => MList}
 import scala.collection.JavaConversions._
+import java.io.File
 import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
 import java.nio.channels.SocketChannel
@@ -148,15 +150,47 @@ class PeerTests {
 		}
 		stats = new LoggerStats
 		PeerTests.stats = stats
+		val baseDir = new File("/tmp/base-storage")
+		val trash = new File(baseDir, "trash")
+		val ownerStorage = new File(baseDir, "owner")
+		val memberStorage = new File(baseDir, "member")
+
+		if (baseDir.exists) {
+			baseDir.listFiles.foreach {file =>
+				if (file.getName != "trash") {
+					deleteFile(file, trash)
+				}
+			}
+		}
+		if (!trash.exists) trash.mkdirs
+		deleteFile(ownerStorage, trash)
+		deleteFile(memberStorage, trash)
 		owner = newOwner
+		owner.readStorage(ownerStorage)
 		member1 = newMember("member 1")
+		member1.readStorage(memberStorage)
+	}
+
+	def deleteFile(dir: File, trash: File) {
+		if (dir.exists) {
+			var suffix = 1
+			var newName: File = null
+
+			do {
+				newName = new File(trash, dir.getName+"-"+randomInt(1000000))
+			} while (newName.exists)
+			dir.renameTo(newName)
+//			daemonActor("trash removal") {
+//				newName.deleteAll
+//			}
+		}
 	}
 
 	@Test def testMessaging {
 		verifyIds
-		sendBroadcasts
-		sendPropSettings
 		testAuthorization
+		sendPropSettings
+		sendBroadcasts
 		waitForCompletion
 		verifyPropSettings
 	}
@@ -167,7 +201,7 @@ class PeerTests {
 		assertEquals(owner.peerId, digestInt(owner.publicKey.getEncoded))
 	}
 	def sendBroadcasts {
-		for (i <- 1 to 3) {
+		for (i <- 1 to 100) {
 			stats.logger ! 2
 			member1.topic.broadcast("hello there")
 		}
@@ -177,37 +211,47 @@ class PeerTests {
 	}
 	def sendPropSettings {
 		stats.logger ! 2
-		member1.topic.setprop("a", "b", false) {msg =>
-			println("set a = b")
-		}
+		member1.topic.setprop("a", "b", true)
 	}
 	def verifyPropSettings {
 		assertEquals(member1.topic.getprop("a"), Some("b"))
+		assertEquals(Some("b"), for {
+			props <- member1.storage.nodes.find(strOpt(_, "name") == Some("(0,1)"))
+			prop <- props.child.find(strOpt(_, "name") == Some("a"))
+			value <- strOpt(prop, "value")
+		} yield value)
 		assertEquals(owner.topic.getprop("a"), Some("b"))
+		verifyNodes(owner.storage)
+		verifyNodes(member1.storage)
+	}
+	def verifyNodes(storage: SetStorage) {
+		val map = storage.nodes.foldLeft(Map.newBuilder[String,Node])((b,n)=>b += strOpt(n, "name").get -> n).result
+
+		assertEquals(2, map.size)
+		assertEquals(2, map("prefs").child.length)
+		assertEquals(1, map("(0,1)").child.length)
 	}
 	def testAuthorization {
 		member1.topic.owner.broadcast(0, 0, "test") {msg =>
-		assertTrue(msg.isInstanceOf[Failed])
+			assertTrue(msg.isInstanceOf[Failed])
 		}
 	}
+	/**
+	 * this verifies that all broadcasts, unicasts, and dht msgs have come through properly
+	 */
 	def waitForCompletion {
 		var oldCount = -1
 		var done = false
 		
 		while (!done) {
 			stats.eventSignal synchronized {
-				if (stats.outstandingEvents == 0) {
-					done = true
-//					println("finished with no outstanding events")
-				} else {
+				if (stats.outstandingEvents == 0) done = true
+				else {
 					val startWait = System.currentTimeMillis
 					stats.eventSignal.wait(1000)
 					if (oldCount != stats.totalEvents) {
 						oldCount = stats.totalEvents
-					} else if (System.currentTimeMillis - startWait >= 1000) {
-						done = true
-//						println("finished with no new events, outstanding events: "+stats.outstandingEvents+", totalEvents: "+stats.totalEvents)
-					}
+					} else if (System.currentTimeMillis - startWait >= 1000) done = true
 				}
 			}
 		}

@@ -14,6 +14,7 @@ import Util._
 class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection) {
 	var joined = false
 
+	def peer = owner.peer
 	def join: this.type = {
 		peer.inputDo(peer.topicsJoined += (space, topic) -> this)
 		if (owner == peer.selfConnection) {
@@ -84,7 +85,6 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	def receive(msg: DelegatedDHT) = basicReceive(msg)
 	def receive(msg: DelegatedDirect) = basicReceive(msg)
 	def basicReceive(msg: SpaceToPeerMessage) {}
-	def peer = owner.peer
 	val propsKey = (space, topic).toString
 }
 

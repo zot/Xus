@@ -28,6 +28,7 @@ import scala.actors.DaemonActor
 import scala.actors.Actor._
 import scala.collection.JavaConversions
 import scala.collection.immutable.Stream
+import java.io.File
 import java.io.Closeable
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -75,6 +76,14 @@ object Util {
 		JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.toSeq.flatMap(_.attributes).removeDuplicates.sortWith((a,b) => a < b).map(QName.valueOf(_))
 	}
 
+	implicit def file2RichFile(file: File): {def deleteAll} = new {
+		def deleteAll {
+			if (file.exists) {
+				if (file.isDirectory) file.listFiles.foreach(file2RichFile(_).deleteAll)
+				file.delete
+			}
+		}
+	}
 	def randomInt(range: Int) = rand.nextInt(range)
 	def str(o: Any): String = o.toString
 	def str(o: BigInt): String = str(o.toByteArray)
