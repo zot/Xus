@@ -328,8 +328,9 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	} yield prop.value
 	def setProp(category: String, key: String, value: String, persist: Boolean) {
 		inputOnly
+		val oldPersist = (for {pr <- props.get(category); p <- pr.get(key)} yield p.persist).getOrElse(false)
 		props += category -> (props.getOrElse(category, new PMap[String, Property]()) + (key -> new Property(key, value, persist)))
-		if (persist) storeProps(category)
+		if (persist || oldPersist) storeProps(category)
 	}
 	def deleteProp(category: String, key: String) = {
 		inputOnly
