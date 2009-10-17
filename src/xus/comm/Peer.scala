@@ -57,7 +57,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	var waiters = PMap[(PeerConnection, Int), (Response)=>Any]()
 	var peerConnections = PMap[SimpyPacketConnectionAPI, PeerConnection]()
 	var storedNodes = PMap[String, Node]()
-	var topicsOwned = PMap[(Int,Int), Topic]()
+	var topicsOwned = PMap[(Int,Int), TopicMaster]()
 	var topicsJoined = PMap[(Int,Int), TopicConnection]()
 	var props = PMap("prefs" -> PMap[String, Property]())
 	var myKeyPair: KeyPair = null
@@ -179,11 +179,11 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	///////////////////////////
 	var peerId: BigInt = BigInt(0)
 
-	def own(connection: TopicConnection): Topic = own(new Topic(connection.space, connection.topic, this), connection)
-	def own(space: Int, topic: Int): Topic = own(space, topic, new TopicConnection(space, topic, selfConnection))
-	def own(space: Int, topic: Int, connection: TopicConnection): Topic = own(new Topic(space, topic, this), connection)
-	def own[T <: Topic](topic: T): T = own(topic, new TopicConnection(topic.space, topic.topic, selfConnection))
-	def own[T <: Topic](topic: T, connection: TopicConnection): T = {
+	def own(connection: TopicConnection): TopicMaster = own(new TopicMaster(connection.space, connection.topic, this), connection)
+	def own(space: Int, topic: Int): TopicMaster = own(space, topic, new TopicConnection(space, topic, selfConnection))
+	def own(space: Int, topic: Int, connection: TopicConnection): TopicMaster = own(new TopicMaster(space, topic, this), connection)
+	def own[T <: TopicMaster](topic: T): T = own(topic, new TopicConnection(topic.space, topic.topic, selfConnection))
+	def own[T <: TopicMaster](topic: T, connection: TopicConnection): T = {
 		topicsOwned += (topic.space, topic.topic) -> topic
 		if (connection != null) {
 			connection.join
@@ -264,21 +264,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// delegate broadcasting, etc to the topic
 	def receive(msg: Broadcast) {
-		msg.payload match {
-		case Seq(<xus-setprop/>) =>
-			for {
-				spaceN <- strOpt(msg.node, "space")
-				topicN <- strOpt(msg.node, "topic")
-				topic <- ownedTopic(spaceN.toInt, topicN.toInt)
-			} topic.setPropRequest(msg)
-		case Seq(<xus-delprop/>) =>
-			for {
-				spaceN <- strOpt(msg.node, "space")
-				topicN <- strOpt(msg.node, "topic")
-				topic <- ownedTopic(spaceN.toInt, topicN.toInt)
-			} topic.deletePropRequest(msg)
-		case _ => ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
-		}
+		ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
 		basicReceive(msg)
 	}
 	def receive(msg: Unicast) {
@@ -351,10 +337,10 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def nodeForProps(name: String) = {
 		inputOnly
 		import scala.xml.NodeSeq._
-		<props name={name}>{
+		<xus-props name={name}>{
 			for ((name, prop) <- props.getOrElse(name, emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {case ((k1, _), (k2, _)) => k1 < k2})
 				yield <prop name={name} value={prop.value}/>
-		}</props>
+		}</xus-props>
 	}
 	def inputOnly = if (self != inputActor) throw new Exception("This method can only be executed in the peer's inputActor")
 	def useProps(n: Node) {

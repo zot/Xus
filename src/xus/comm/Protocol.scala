@@ -105,6 +105,7 @@ abstract class TopicSpaceMessage(name: String) extends Message(name) {
 }
 abstract class PeerToSpaceMessage(name: String) extends TopicSpaceMessage(name) {
 	def sender = con.peerId
+	def service = string("service")
 }
 class DHT extends PeerToSpaceMessage("dht") {
 	def dispatch(peer: Peer) = peer.receive(this)

@@ -211,16 +211,16 @@ class PeerTests {
 	}
 	def sendPropSettings {
 		stats.logger ! 2
-		member1.topic.setprop("a", "b", true)
+		member1.topic(Properties).setprop("a", "b", true)
 	}
 	def verifyPropSettings {
-		assertEquals(member1.topic.getprop("a"), Some("b"))
+		assertEquals(member1.topic(Properties).getprop("a"), Some("b"))
 		assertEquals(Some("b"), for {
 			props <- member1.storage.nodes.find(strOpt(_, "name") == Some("(0,1)"))
 			prop <- props.child.find(strOpt(_, "name") == Some("a"))
 			value <- strOpt(prop, "value")
 		} yield value)
-		assertEquals(owner.topic.getprop("a"), Some("b"))
+		assertEquals(owner.topic(Properties).getprop("a"), Some("b"))
 		verifyNodes(owner.storage)
 		verifyNodes(member1.storage)
 	}
@@ -263,9 +263,11 @@ class PeerTests {
 	def newOwner = {
 		val o = new TestPeer("Owner")
 
+		// support(Properties) sends out a broadcast
+		stats.logger ! 1
 		o.topic = new TestTopicConnection(0, 1, o.selfConnection)
 		o.own(0, 0)
-		o.own(0, 1, o.topic)
+		o.own(0, 1, o.topic).support(Properties)
 		o
 	}
 	
@@ -370,6 +372,7 @@ class TestPeer(name: String) extends Peer(name) {
 		super.receiveInput(con, bytes)
 	}
 	override def handleInput(con: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) = {
+//println("Input: "+parse(str)); str.reset
 		if (badBytes(str.bytes)) {
 			badBytes.remove(str.bytes)
 			println("Duplicate input: " + parse(str))
