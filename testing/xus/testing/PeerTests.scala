@@ -106,10 +106,6 @@ object PeerTests {
 							writer.println("Socket failures...")
 							failures2.foreach(f => f.printStackTrace(writer))
 						}
-//						if (!exceptions.isEmpty) {
-//							writer.println("General exceptions...")
-//							exceptions.foreach(_.printStackTrace(writer))
-//						}
 						writer.flush
 					}
 					lock synchronized {
@@ -214,7 +210,7 @@ class PeerTests {
 		member1.topic(Properties).setprop("a", "b", true)
 	}
 	def verifyPropSettings {
-		assertEquals(member1.topic(Properties).getprop("a"), Some("b"))
+		assertEquals(Some("b"), member1.topic(Properties).getprop("a"))
 		assertEquals(Some("b"), for {
 			props <- member1.storage.nodes.find(strOpt(_, "name") == Some("(0,1)"))
 			prop <- props.child.find(strOpt(_, "name") == Some("a"))

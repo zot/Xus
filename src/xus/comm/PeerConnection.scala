@@ -60,16 +60,16 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	//
 	// peer-to-space messages
 	//
-	def broadcast(space: Int, topic: Int,  payload: Any, service: ServiceFactory[_ <: Service, _ <: ServiceMaster] = null, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def broadcast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
 		send(new Broadcast, <broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</broadcast>)(block)
 
-	def unicast(space: Int, topic: Int,  payload: Any, service: ServiceFactory[_ <: Service, _ <: ServiceMaster] = null, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def unicast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
 		send(new Unicast, <unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</unicast>)(block)
 
-	def dht(space: Int, topic: Int, key: BigInt, payload: Any, service: ServiceFactory[_ <: Service, _ <: ServiceMaster] = null, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def dht(space: Int, topic: Int, key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
 		send(new DHT, <dht space={str(space)} topic={str(topic)} key={str(key)} msgid={msgIdFor(msgId)}>{payload}</dht>)(block)
 
-	def delegate(peer: Int, space: Int, topic: Int,  payload: Any, service: ServiceFactory[_ <: Service, _ <: ServiceMaster] = null, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def delegate(peer: Int, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
 		send(new DelegateDirect, <delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegate>)(block)
 
 	//

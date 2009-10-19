@@ -308,6 +308,8 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// properties
 	//
+	def getPref(key: String) = getProp("prefs", key)
+	def setPref(key: String, value: String) = setProp("prefs", key, value, true)
 	def getProp(category: String, key: String) = for {
 		p <- props.get(category)
 		prop <- p.get(key)
@@ -329,8 +331,8 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	def storePrefs {
 		inputDo {
-			setProp("prefs", "public", str(keyPair.getPublic), true)
-			setProp("prefs", "private", str(keyPair.getPrivate), true)
+			setPref("public", str(keyPair.getPublic))
+			setPref("private", str(keyPair.getPrivate))
 			storeProps("prefs")
 		}
 	}

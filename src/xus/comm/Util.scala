@@ -103,13 +103,15 @@ object Util {
 	def attributes(d: MetaData) = {
 		val attrs = new AttributesHolder
 
-		for (attr <- d) {
-			val sb = new StringBuilder()
-		    Utility.sequenceToXML(attr.value, TopScope, sb, true)
-		    findAlgorithm(sb.toString) match {
+		if (d != null) {
+			for (attr <- d) {
+				val sb = new StringBuilder()
+				Utility.sequenceToXML(attr.value, TopScope, sb, true)
+				findAlgorithm(sb.toString) match {
 				case (_, -1, v: String) => attrs.addAttribute(new QualifiedName("", "", attr.key.toLowerCase), v)
 				case (null, id: Int, data: Any) => attrs.addAttributeWithAlgorithmData(new QualifiedName("", "", attr.key.toLowerCase), null, id, data)
 				case (uri: String, id: Int, data: Any) => attrs.addAttributeWithAlgorithmData(new QualifiedName("", "", attr.key.toLowerCase), uri, id, data)
+				}
 			}
 		}
 		attrs
