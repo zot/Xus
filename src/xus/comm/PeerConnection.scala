@@ -30,9 +30,16 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	override def toString = "PeerConnection ("+con+")"
 	def close = con.close
 	def publicKeyString = str(peerKey)
-	def setKey(bytes: Array[Byte]) {
-		peerKey = publicKeyFor(bytes)
-		peerId = digestInt(bytes)
+	def setKey(bytes: Array[Byte]) = {
+		val newPeerId = digestInt(bytes)
+
+		if (peerId != BigInt(0) && peerId != newPeerId) {
+			false
+		} else {
+			peerKey = publicKeyFor(bytes)
+			peerId = newPeerId
+			true
+		}
 	}
 	//
 	// peer-to-peer messages

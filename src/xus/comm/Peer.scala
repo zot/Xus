@@ -56,6 +56,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	var storage: SetStorage = null
 	var waiters = PMap[(PeerConnection, Int), (Response)=>Any]()
 	var peerConnections = PMap[SimpyPacketConnectionAPI, PeerConnection]()
+	var connectionsByPeerId = PMap[BigInt, PeerConnection]()
 	var storedNodes = PMap[String, Node]()
 	var topicsOwned = PMap[(Int,Int), TopicMaster]()
 	var topicsJoined = PMap[(Int,Int), TopicConnection]()
@@ -86,16 +87,17 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		else if (wait) inputActor !? new WaitBlock(block)
 		else inputActor ! (()=>block)
 	}
-	def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
-		//split this creation into steps so the waiter is in place before the connection initiates
+	def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+		//this creation is split into steps so the waiter is in place before the connection initiates
 		val pcon = new PeerConnection(null, this)
-			
+
+		pcon.peerId = expectedPeerId
 		if (connectBlock != emptyHandler) {
 			inputDo(waiters += ((pcon, 0) -> connectBlock))
 		}
 		SimpyPacketConnection(host, port, this) {con =>
-		pcon.con = con
-		peerConnections += con -> pcon
+			pcon.con = con
+			peerConnections += con -> pcon
 		}
 		pcon
 	}
@@ -137,7 +139,10 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		msg
 	}
 	def closed(con: SimpyPacketConnectionAPI) {
-		topicsOwned.valuesIterator.foreach(_.removeMember(peerConnections(con)))
+		val pcon = peerConnections(con)
+
+		topicsOwned.valuesIterator.foreach(_.removeMember(pcon))
+		connectionsByPeerId -= pcon.peerId
 		peerConnections -= con
 	}
 	def received[M <: Message](msg: M): M = {
@@ -230,14 +235,20 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		basicReceive(msg)
 	}
 	def receive(msg: ChallengeResponse) = {
-		msg.con.setKey(bytesFor(msg.publicKey))
-		if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature)) && msg.con.authenticationToken == msg.token) {
-			msg.con.authenticated = true
-			if (msg.challengeToken.length > 0) {
-				msg.con.challengeResponse(msg.challengeToken, "", msg.msgId)
+		if (msg.con.setKey(bytesFor(msg.publicKey))) {
+			//TODO this could replace a redundant connection to the same peer
+			connectionsByPeerId += msg.con.peerId -> msg.con
+			if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature)) && msg.con.authenticationToken == msg.token) {
+				msg.con.authenticated = true
+				if (msg.challengeToken.length > 0) {
+					msg.con.challengeResponse(msg.challengeToken, "", msg.msgId)
+				}
+			} else {
+				msg.con.failed(msg, "Invalid signature")
+				msg.con.close
 			}
 		} else {
-			msg.con.failed(msg, "Invalid signature")
+			msg.con.failed(msg, "Unexpected PeerId")
 			msg.con.close
 		}
 	}

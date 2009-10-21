@@ -69,7 +69,7 @@ object IM extends Peer("IM") {
 	}
 	def client(port: Int) {
 		Swing.onEDT {frame.title = "Client Chat " + peerId}
-		connect("localhost", port) {m =>
+		connect("localhost", port, 0) {m =>
 			println("Connected")
 			topic = join(new ChatTopicConnection(0, 1, m.con))
 		}

@@ -71,7 +71,7 @@ object PeerTests {
 	val lock = new Object
 	var done = false
 	var connectionBlock: (SocketChannel, Option[Acceptor]) => CheckingConnection = null
-	
+
 	def newStats = {
 		stats = new LoggerStats
 		stats
@@ -296,7 +296,7 @@ class PeerTests {
 					}
 				}
 			}
-			pcon = peer1.connect(PeerTests.HOST, PeerTests.PORT) {PeerTests.mainActor ! _}
+			pcon = peer1.connect(PeerTests.HOST, PeerTests.PORT, 0) {PeerTests.mainActor ! _}
 		}
 		peer1.ownerCon = pcon
 		var connected = false
@@ -386,16 +386,17 @@ class TestPeer(name: String) extends Peer(name) {
 		lastIdCon.msg = msg
 		super.received(msg)
 	}
-	override def connect(host: String, port: Int)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+	override def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Any): PeerConnection = {
 		//split this creation into steps so the waiter is in place before the connection initiates
 		val pcon = new PeerConnection(null, this)
 
+		pcon.peerId = expectedPeerId
 		if (connectBlock != Peer.emptyHandler) {
 			inputDo(waiters += ((pcon, 0) -> connectBlock))
 		}
 		SimpyPacketConnection(host, port, this, (con, peer, acc) => new CheckingConnection(con, peer.asInstanceOf[TestPeer], acc)) {con =>
-		pcon.con = con
-		peerConnections += con -> pcon
+			pcon.con = con
+			peerConnections += con -> pcon
 		}
 		pcon
 	}

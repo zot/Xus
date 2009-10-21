@@ -79,11 +79,11 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 
 	def delegate(peer: Int, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, payload, msgId)(block)
 
-	def optBroadcast(payload: => Any, msgId: Int = -1)(elseBlock: => Any)(implicit block: (Response) => Unit): Unit = ifAnyoneElse(broadcast(payload, msgId)(block), elseBlock)
+	def optBroadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit): Unit = ifAnyone(broadcast(payload, msgId)(block))
 
-	def optUnicast(payload: => Any, msgId: Int = -1)(elseBlock: => Any)(implicit block: (Response) => Unit) = ifAnyoneElse(unicast(payload, msgId)(block), elseBlock)
+	def optUnicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(unicast(payload, msgId)(block))
 
-	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(elseBlock: => Any)(implicit block: (Response) => Unit) = ifAnyoneElse(dht(key, payload, msgId)(block), elseBlock)
+	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(dht(key, payload, msgId)(block))
 
 	// hooks
 	def receive(msg: DelegatedBroadcast) = {
@@ -111,14 +111,10 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	def basicReceive(msg: SpaceToPeerMessage) {}
 
 	/**
-	 * true if this peer does not own the topic or if it does own it and there are recipients other than itself
+	 * if this peer does not own the topic or if it does own it and there are members
+	 * then execute expr
 	 */
-	def ifAnyoneElse(expr: => Any, elseBlock: => Any) =
-		if (peer.ownedTopic(space, topic).map(_.members match {case Seq(c) => c != peer.selfConnection; case m => !m.isEmpty}) getOrElse true) {
-			expr
-		} else {
-			elseBlock
-		}
+	def ifAnyone(expr: => Any) = if (peer.ownedTopic(space, topic).map(!_.members.isEmpty) getOrElse true) expr
 }
 
 class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
