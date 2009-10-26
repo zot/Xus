@@ -7,6 +7,7 @@ import scala.xml.Node
 object Monitoring extends ServiceFactory[MonitoringConnection,MonitoringMaster] {
 	def createConnection(con: TopicConnection) = {
 		println("Monitoring peer: "+con.owner)
+		MonitoringView.setMaster(con.owner)
 		new MonitoringConnection(con)
 	}
 

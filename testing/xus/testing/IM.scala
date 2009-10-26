@@ -79,6 +79,9 @@ object IM extends Peer("IM") {
 			join(-1, -1, m.con)
 		}
 	}
+	override def basicReceive(msg: Message) {
+		println(msg)
+	}
 	object Chat extends ServiceFactory[ChatConnection, ServiceMaster] {
 		def createConnection(con: TopicConnection) = {
 			chat = new ChatConnection(con)

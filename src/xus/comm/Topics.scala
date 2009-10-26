@@ -126,6 +126,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	var members = Array[PeerConnection]()
 	var services = HashMap[ServiceFactory[_,_], ServiceMaster](TopicManagement -> management)
 	var servicesByName = HashMap[String, ServiceMaster](TopicManagement.getClass.getName.toLowerCase -> management)
+	val newServiceSortBlock = (a: ServiceMaster, b: ServiceMaster) => !a.isInstanceOf[TopicManagementMaster] || b.isInstanceOf[TopicManagementMaster]
 
 	//protocol
 	/**
@@ -136,7 +137,11 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 		msg.con.completed(msg, nodesForJoinResponse)
 		peer.observers foreach (_.joinTopic(msg.con, this))
 	}
-	def nodesForJoinResponse = services.values.foldLeft(List[Node]()) {(list, svc) => svc.newMembersNode.map(_ :: list) getOrElse list}
+
+	def nodesForJoinResponse = {
+		println("sorted services: " + List.fromIterator(services.values).sort(newServiceSortBlock))
+		List.fromIterator(services.values).sort(newServiceSortBlock).foldLeft(List[Node]()) {(list, svc) => svc.newMembersNode.map(_ :: list) getOrElse list}
+	}
 
 	//api
 	def addMember(con: PeerConnection) {
