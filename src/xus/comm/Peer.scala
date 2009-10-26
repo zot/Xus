@@ -62,6 +62,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	var topicsJoined = PMap[(Int,Int), TopicConnection]()
 	var props = PMap("prefs" -> PMap[String, Property]())
 	var myKeyPair: KeyPair = null
+	var observers = Set[MonitorObserver]()
 	val selfConnection = createSelfConnection
 	val inputActor = daemonActor("Peer input") {
 		self link Util.actorExceptions
@@ -80,6 +81,9 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 
 	selfConnection.authenticated = true
 
+	def addObserver(obs: MonitorObserver) {
+		observers += obs
+	}
 	def createSelfConnection = addConnection(new DirectSimpyPacketConnection(this))
 	def inputDo(block: => Any): Any = inputDo(true)(block)
 	def inputDo(wait: Boolean)(block: => Any) = {
@@ -97,9 +101,17 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		}
 		SimpyPacketConnection(host, port, this) {con =>
 			pcon.con = con
-			peerConnections += con -> pcon
+			addPeerConnection(pcon)
 		}
 		pcon
+	}
+	def addPeerConnection(pcon: PeerConnection) {
+		peerConnections += pcon.con -> pcon
+		observers foreach (_.addPeerConnection(pcon))
+	}
+	def removePeerConnection(pcon: PeerConnection) {
+		peerConnections -= pcon.con
+		observers foreach (_.removePeerConnection(pcon))
 	}
 	def handleInput(scon: SimpyPacketConnectionAPI, str: OpenByteArrayInputStream) {
 		val node = parse(str)
@@ -143,7 +155,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 
 		topicsOwned.valuesIterator.foreach(_.removeMember(pcon))
 		connectionsByPeerId -= pcon.peerId
-		peerConnections -= con
+		removePeerConnection(pcon)
 	}
 	def received[M <: Message](msg: M): M = {
 		inputOnly
@@ -187,13 +199,13 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def own(connection: TopicConnection): TopicMaster = own(new TopicMaster(connection.space, connection.topic, this), connection)
 	def own(space: Int, topic: Int): TopicMaster = own(space, topic, new TopicConnection(space, topic, selfConnection))
 	def own(space: Int, topic: Int, connection: TopicConnection): TopicMaster = own(new TopicMaster(space, topic, this), connection)
-	def own[T <: TopicMaster](topic: T): T = own(topic, new TopicConnection(topic.space, topic.topic, selfConnection))
-	def own[T <: TopicMaster](topic: T, connection: TopicConnection): T = {
-		topicsOwned += (topic.space, topic.topic) -> topic
+	def own[M <: TopicMaster](master: M): M = own(master, new TopicConnection(master.space, master.topic, selfConnection))
+	def own[M <: TopicMaster](master: M, connection: TopicConnection): M = {
+		topicsOwned += (master.space, master.topic) -> master
 		if (connection != null) {
 			connection.join
 		}
-		topic
+		master
 	}
 	def join(space: Int, topic: Int, con: PeerConnection): TopicConnection = join(new TopicConnection(space, topic, con))
 	def join[C <: TopicConnection](con: C): C = con.join
@@ -406,4 +418,11 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	override def toString = "Peer(" + name + ", " + str(peerId) + ")"
 }
+
 class Property(val name: String, var value: String, var persist: Boolean)
+
+trait MonitorObserver {
+	def addPeerConnection(con: PeerConnection): Unit
+	def removePeerConnection(con: PeerConnection): Unit
+	def joinTopic(con: PeerConnection, topic: TopicMaster): Unit
+}

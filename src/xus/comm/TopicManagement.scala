@@ -9,18 +9,12 @@ object TopicManagement extends ServiceFactory[TopicManagementConnection,TopicMan
 	def createMaster(master: TopicMaster) = new TopicManagementMaster(master)
 }
 
-class TopicManagementConnection(val topic: TopicConnection) extends ServiceConnection {
+class TopicManagementConnection(topic: TopicConnection) extends ServiceConnection(topic) {
 	override def joined(nodes: Seq[Node]) = handlePayload(nodes)
 
-	override def receive(msg: DelegatedBroadcast) = handlePayload(msg.payload)
+	override def receive(msg: DelegatedBroadcast, n: Node) = handlePayload(n.child)
 
-	def handlePayload(nodes: Seq[Node]) {
-		for (n <- nodes) n match {
-		case TopicManagement(svcs) => for (svc <- svcs) supportService(svc)
-		case <service/> => supportService(n)
-		case _ =>
-		}
-	}
+	def handlePayload(nodes: Seq[Node]) = for (svc <- nodes) supportService(svc)
 
 	def supportService(svc: Node) {
 		for (name <- strOpt(svc, "name")) {
@@ -29,10 +23,10 @@ class TopicManagementConnection(val topic: TopicConnection) extends ServiceConne
 	}
 }
 
-class TopicManagementMaster(val master: TopicMaster) extends ServiceMaster {
-	def newMembersNode = Some(TopicManagement(for (svc <- master.services.keysIterator) yield serviceNode(svc)))
+class TopicManagementMaster(master: TopicMaster) extends ServiceMaster(master) {
+	override def newMembersNode = Some(TopicManagement((for ((fac, svc) <- master.services) yield serviceNode(fac, svc)).toSeq: _*))
 
-	def serviceNode(svc: ServiceFactory[_,_]) = <service name={svc.getClass.getName}/>
+	def serviceNode(fac: ServiceFactory[_,_], svc: ServiceMaster) = <service name={fac.getClass.getName}></service>
 
-	def broadcastService(svc: ServiceFactory[_,_]) = master.broadcast(TopicManagement(serviceNode(svc)))
+	def broadcastService(fac: ServiceFactory[_,_], svc: ServiceMaster) = master.broadcast(TopicManagement(serviceNode(fac, svc)))
 }

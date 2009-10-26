@@ -22,6 +22,7 @@ trait SimpyPacketConnectionAPI {
 	def send(bytes: Array[Byte], offset: Int, len: Int): Unit
 	def send(bytes: Array[Byte]) {send(bytes, 0, bytes.length)}
 	def close
+	def address: Option[InetSocketAddress] = None
 }
 trait SimpyPacketPeerAPI {
 	def receiveInput(con: SimpyPacketConnectionAPI, bytes: Array[Byte], offset: Int, length: Int): Unit
@@ -33,7 +34,7 @@ object SimpyPacketConnection {
 	
 	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
 	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection =
-		this(host, port, peer, (chan, peer, optAcc) => this(chan, peer, None))(conBlock)
+		apply(host, port, peer, (chan, peer, optAcc) => this(chan, peer, None))(conBlock)
 	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI, create: (SocketChannel, SimpyPacketPeerAPI, Option[Acceptor]) => SimpyPacketConnection)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
 		val chan = SocketChannel.open
 			
@@ -104,6 +105,11 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 		}
 	}
 
+	override def address = {
+		val addr = clientChan.socket.getRemoteSocketAddress.asInstanceOf[InetSocketAddress]
+
+		if (addr != null) Some(addr) else None
+	}
 	def nextOutgoingMsgId = {
 		msgId += 1
 		msgId

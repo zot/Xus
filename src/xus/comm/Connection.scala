@@ -87,5 +87,6 @@ abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
 	def close {
 		chan.keyFor(Connection.selector).cancel
 	}
+
 	def handle(key: SelectionKey) = ()
 }

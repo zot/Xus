@@ -1,15 +1,16 @@
 package xus.comm
 
 import Util._
+import scala.xml.Node
 
 object FileSharing extends ServiceFactory[FileSharingConnection,FileSharingMaster] {
 	def createConnection(topic: TopicConnection) = new FileSharingConnection(topic)
 	def createMaster(topic: TopicMaster) = new FileSharingMaster(topic)
 }
 
-class FileSharingConnection(val topic: TopicConnection) extends ServiceConnection {
-	override def receive(msg: DelegatedDHT) {
-		msg.payload match {
+class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(topic) {
+	override def receive(msg: DelegatedDHT, node: Node) {
+		for (n <- node.child) n match {
 		case Seq(<store>{data}</store>) => store(msg, bytesFor(data.mkString))
 		case Seq(<retrieve>{data}</retrieve>) => retrieve(msg)
 		case _ =>
@@ -25,6 +26,6 @@ class FileSharingConnection(val topic: TopicConnection) extends ServiceConnectio
 	}
 }
 
-class FileSharingMaster(val master: TopicMaster) extends ServiceMaster {
-	def newMembersNode = None
+class FileSharingMaster(master: TopicMaster) extends ServiceMaster(master) {
+	override def newMembersNode = None
 }

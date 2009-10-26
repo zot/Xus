@@ -511,8 +511,13 @@ Also see [[AdvancedOptions]]</pre>
 </div>
 <!--POST-SHADOWAREA-->
 <div id="storeArea">
-<div title="Conventions" modifier="WRB" created="200910200631" modified="200910200645" changecount="4">
-<pre>!Standard Topics
+<div title="Conventions" modifier="WRB" created="200910200631" modified="200910230658" changecount="8">
+<pre>!Standard Spaces
+Space 0: Root of a cluster (Topic 1 is for user mgmt on the cluster)
+Space N &gt; 0: space global to the cluster
+Space -1: local space to this peer, for monitoring
+* Every peer has a local Space -1 where it sends all of its monitoring data
+!Standard Topics
 Topic 0 - -100: Reserved for topic management and monitoring
 Topic 0: user managment, etc.
 Topic -1: monitoring

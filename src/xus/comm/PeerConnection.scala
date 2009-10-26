@@ -13,6 +13,7 @@ import scala.xml.Elem
 import java.io.ByteArrayOutputStream
 import java.security.PublicKey
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
+import java.net.InetSocketAddress
 
 /**
  * A connection to another peer (wraps a SimpyPacketConnection)
@@ -27,9 +28,16 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	var authenticated = false
 	val ownedSpaces = MList[Int]()
 
-	override def toString = "PeerConnection ("+con+")"
-	def close = con.close
+	override def toString = "PeerConnection ("+str(peerId)+" "+con+")"
+
+	def address = con.address
+
+	def isConnected = con != null
+
+	def close = if (isConnected) con.close
+
 	def publicKeyString = str(peerKey)
+
 	def setKey(bytes: Array[Byte]) = {
 		val newPeerId = digestInt(bytes)
 

@@ -8,7 +8,7 @@ object Properties extends ServiceFactory[PropertiesConnection,PropertiesMaster] 
 	def createMaster(topic: TopicMaster) = new PropertiesMaster(topic)
 }
 
-class PropertiesConnection(val topic: TopicConnection) extends ServiceConnection {
+class PropertiesConnection(topic: TopicConnection) extends ServiceConnection(topic) {
 	override def joined(nodes: Seq[Node]) {
 		for (n <- nodes) n match {
 		case Properties(n @ <xus-props/>) => peer.useProps(n)
@@ -35,22 +35,20 @@ class PropertiesConnection(val topic: TopicConnection) extends ServiceConnection
 			if persist
 		} peer.storeProps(topic.propsKey)
 	}
-	override def receive(msg: DelegatedBroadcast) {
-		for (n <- msg.payload(0).child) n match {
+	override def receive(msg: DelegatedBroadcast, node: Node) {
+		for (n <- node.child) n match {
 		case <setprop/> =>
-		for {
-			name <- strOpt(n, "name")
-			value <- strOpt(n, "value")
-			persist <- strOpt(n, "persist")
-		} receiveSetProp(msg, name, value, persist.toBoolean)
-		case Seq(n @ <delprop/>) =>
-		for (name <- strOpt(n, "name")) receiveDeleteProp(msg, name)
-		case _ =>
+			for {
+				name <- strOpt(n, "name")
+				value <- strOpt(n, "value")
+				persist <- strOpt(n, "persist")
+			} receiveSetProp(msg, name, value, persist.toBoolean)
+		case n @ <delprop/> => for (name <- strOpt(n, "name")) receiveDeleteProp(msg, name)
 		}
 	}
 }
 
-class PropertiesMaster(val master: TopicMaster) extends ServiceMaster {
-	def newMembersNode = Some(Properties(master.peer.nodeForProps(master.propsKey)))
-	override def process(msg: Broadcast) {super.process(msg)}
+class PropertiesMaster(master: TopicMaster) extends ServiceMaster(master) {
+	override def newMembersNode = Some(Properties(master.peer.nodeForProps(master.propsKey)))
+//	override def process(msg: Broadcast) {super.process(msg)}
 }

@@ -100,6 +100,8 @@ object Util {
 		}
 	}
 	def strOpt(node: Node, attribute: String) = node.attribute(attribute).map(_.mkString)
+	def intOpt(node: Node, attribute: String) = node.attribute(attribute).map(_.mkString.toInt)
+	def bigIntOpt(node: Node, attribute: String) = node.attribute(attribute).map(att => BigInt(bytesFor(att.mkString)))
 	def attributes(d: MetaData) = {
 		val attrs = new AttributesHolder
 
@@ -200,6 +202,15 @@ object Util {
 	}
 	def bytesFor(str: String) = (new BASE64EncodingAlgorithm).convertFromCharacters(str.toCharArray, 0, str.length).asInstanceOf[Array[Byte]]
 	def hexForBytes(bytes: Array[Byte]) = bytes.map("%02X".format(_)).mkString
+	def hex(n: BigInt, width: Int = -1) = {
+		val s = n.toString(16)
+
+		if (width != -1 && width < s.length) {
+			(1 to width - s.length).map(_=>'0').mkString + s
+		} else {
+			s
+		}
+	}
 	def bytesForHex(str: String) = (for (i <- 0 until str.length by 2) yield java.lang.Byte.parseByte(str.slice(i, i + 2), 16)).toArray[Byte]
 	def digestInt(bytes: Array[Byte]) = {
 		val i = BigInt(digest.digest(bytes))

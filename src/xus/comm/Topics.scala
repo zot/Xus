@@ -12,6 +12,7 @@ import scala.util.Sorting
 import scala.collection.mutable.Set
 import scala.collection.immutable.HashMap
 import java.security.PublicKey
+import java.net.InetSocketAddress
 import Protocol._
 import Util._
 
@@ -59,7 +60,10 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		this
 	}
 
-	def handleJoin(nodes: Seq[Node]) = for (s <- services.values) s.joined(nodes)
+	def handleJoin(nodes: Seq[Node]) = for {
+			n <- nodes;
+			svc <- servicesByName.get(n.label)
+		} svc.joined(n.child)
 
 	//
 	// peer-to-peer messages
@@ -87,22 +91,22 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 
 	// hooks
 	def receive(msg: DelegatedBroadcast) = {
-		servicesFor(msg).foreach(_.receive(msg))
+		for {n <- msg.payload; svc <- servicesByName.get(n.label)} svc.receive(msg, n)
 		basicReceive(msg)
 	}
 
 	def receive(msg: DelegatedUnicast) = {
-		servicesFor(msg).foreach(_.receive(msg))
+		for {n <- msg.payload; svc <- servicesByName.get(n.label)} svc.receive(msg, n)
 		basicReceive(msg)
 	}
 
 	def receive(msg: DelegatedDHT) = {
-		servicesFor(msg).foreach(_.receive(msg))
+		for {n <- msg.payload; svc <- servicesByName.get(n.label)} svc.receive(msg, n)
 		basicReceive(msg)
 	}
 
 	def receive(msg: DelegatedDirect) = {
-		servicesFor(msg).foreach(_.receive(msg))
+		for {n <- msg.payload; svc <- servicesByName.get(n.label)} svc.receive(msg, n)
 		basicReceive(msg)
 	}
 
@@ -130,6 +134,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	def joinRequest(msg: Direct) = {
 		addMember(msg.con)
 		msg.con.completed(msg, nodesForJoinResponse)
+		peer.observers foreach (_.joinTopic(msg.con, this))
 	}
 	def nodesForJoinResponse = services.values.foldLeft(List[Node]()) {(list, svc) => svc.newMembersNode.map(_ :: list) getOrElse list}
 
@@ -151,12 +156,20 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	}
 
 	def servicesFor(msg: PeerToSpaceMessage) = msg.payload match {case Seq(n: Node) => servicesByName.get(n.label); case _ => None}
+	
+	def servicesDo(msg: PeerToSpaceMessage)(block: (ServiceMaster, Node) => Any) = {
+		!(for {
+			n <- msg.payload
+			svc <- servicesByName.get(n.label)
+		} yield {
+			block(svc, n)
+			true
+		}).isEmpty
+	}
 
 	def process(broadcast: Broadcast) = {
 		authorize(broadcast) {
-			servicesFor(broadcast).map(_.process(broadcast)).getOrElse {
-				this.broadcast(broadcast)
-			}
+			if (!servicesDo(broadcast)(_.process(broadcast, _))) this.broadcast(broadcast)
 			broadcast.completed("")
 		}
 	}
@@ -167,7 +180,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 		members.foreach(_.delegatedBroadcast(sender, space, topic, payload))
 	}
 
-	def process(unicast: Unicast) = authorize(unicast) {servicesFor(unicast).map(_.process(unicast)).getOrElse {this.unicast(unicast)}}
+	def process(unicast: Unicast) = authorize(unicast) {if (!servicesDo(unicast)(_.process(unicast, _))) this.unicast(unicast)}
 
 	def unicast(msg: Unicast) {
 		members(randomInt(members.length)).delegatedUnicast(msg.sender, msg.space, msg.topic, msg.node.child) {
@@ -178,7 +191,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 
 	def process(dht: DHT) = {
 		authorize(dht) {
-			servicesFor(dht).map(_.process(dht)).getOrElse {
+			if (!servicesDo(dht)(_.process(dht, _))) {
 				findDht(dht).delegatedDht(dht.sender, dht.space, dht.topic, dht.key, dht.node.child) {
 				case c: Completed => dht.completed(c.payload)
 				case f: Failed => dht.failed(f.payload)
@@ -194,7 +207,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 		}
 	}
 
-	def process(delegate: DelegateDirect) = authorize(delegate) {servicesFor(delegate).map(_.process(delegate)).getOrElse {this.delegate(delegate)}}
+	def process(delegate: DelegateDirect) = authorize(delegate) {if (!servicesDo(delegate)(_.process(delegate, _))) this.delegate(delegate)}
 
 	def delegate(msg: DelegateDirect) {
 		members.find(_.peerId == msg.receiver) match {
@@ -221,7 +234,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 
 			services += fac -> svc
 			servicesByName += fac.getClass.getName.toLowerCase -> svc
-			management.broadcastService(fac)
+			management.broadcastService(fac, svc)
 			svc
 		}).asInstanceOf[M]
 	}
@@ -252,36 +265,37 @@ trait ServiceFactory[S <: ServiceConnection, M <: ServiceMaster] {
 	
 	def apply(children: Iterator[Node]) = Elem(null, getClass.getName.toLowerCase, null, TopScope, children.toSeq: _*)
 
-	def apply(children: Seq[Node]) = Elem(null, getClass.getName.toLowerCase, null, TopScope, children: _*)
+	def apply(children: Node*) = Elem(null, getClass.getName.toLowerCase, null, TopScope, children: _*)
 
 	def unapply(n: Node) = if (n.label.toLowerCase == getClass.getName.toLowerCase) Some(n.child) else None
 }
 
-trait ServiceConnection {
+class ServiceConnection(val topic: TopicConnection) {
 	def peer = topic.peer
-
-	def topic: TopicConnection
 
 	def joined(payload: Seq[Node]) {}
 
-	def receive(msg: DelegatedBroadcast) {}
+	def receive(msg: DelegatedBroadcast, n: Node) {}
 
-	def receive(msg: DelegatedUnicast) {}
+	def receive(msg: DelegatedUnicast, n: Node) {}
 
-	def receive(msg: DelegatedDHT) {}
+	def receive(msg: DelegatedDHT, n: Node) {}
 
-	def receive(msg: DelegatedDirect) {}
+	def receive(msg: DelegatedDirect, n: Node) {}
 }
 
-trait ServiceMaster {
-	def newMembersNode: Option[Node]
-	def master: TopicMaster
+class ServiceMaster(val master: TopicMaster) {
+	def newMembersNode: Option[Node] = None
 
-	def process(msg: Broadcast) {master.broadcast(msg)}
+	def process(msg: Broadcast, n: Node) {master.broadcast(msg)}
 
-	def process(msg: Unicast) {master.unicast(msg)}
+	def process(msg: Unicast, n: Node) {master.unicast(msg)}
 
-	def process(msg: DHT) {master.dht(msg)}
+	def process(msg: DHT, n: Node) {master.dht(msg)}
 
-	def process(msg: DelegateDirect) {master.delegate(msg)}
+	def process(msg: DelegateDirect, n: Node) {master.delegate(msg)}
+}
+
+class TopicSpace {
+	var owners = List[PeerConnection]()
 }
