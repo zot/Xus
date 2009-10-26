@@ -107,7 +107,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	def addPeerConnection(pcon: PeerConnection) {
 		peerConnections += pcon.con -> pcon
-		observers foreach (_.addPeerConnection(pcon))
+		pcon
 	}
 	def removePeerConnection(pcon: PeerConnection) {
 		peerConnections -= pcon.con
@@ -172,7 +172,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	def genId: this.type = {keyPair = genKeyPair; this}
 	def addConnection(con: SimpyPacketConnectionAPI) = {
 		val peerCon = new PeerConnection(con, this)
-		peerConnections += con -> peerCon
+		addPeerConnection(peerCon)
 		peerCon
 	}
 	def send[M <: Message](con: SimpyPacketConnectionAPI, msg: M, node: Node): M = {
@@ -252,6 +252,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 			connectionsByPeerId += msg.con.peerId -> msg.con
 			if (verifySignature(msg.innerNode, msg.con.peerKey, bytesFor(msg.signature)) && msg.con.authenticationToken == msg.token) {
 				msg.con.authenticated = true
+				observers foreach (_.addPeerConnection(msg.con))
 				if (msg.challengeToken.length > 0) {
 					msg.con.challengeResponse(msg.challengeToken, "", msg.msgId)
 				}

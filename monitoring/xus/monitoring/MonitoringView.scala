@@ -27,8 +27,8 @@ object MonitoringView {
 
 		val diagram = new Panel {
 			override def paintComponent(g: Graphics2D) {
-				val r = bounds
-				val peerDiam = 64
+				val r = peer.getBounds()
+				val peerDiam = 32
 				val midX = (r.width + 1) / 2
 				val midY = (r.height + 1) / 2
 
@@ -41,31 +41,36 @@ object MonitoringView {
 				for (rot <- 0 until connections.size) {
 					drawPeer(rot, g, midX, midY, peerDiam, cons(rot))
 				}
-				drawPeerShape(0, g, midX, midY, myMaster)
+				if (myMaster != null) {
+					drawPeerShape(g, midX, midY, myMaster)
+				}
 			}
 			
-			def xFor(num: Int, midX: Int) = round((Math.cos(Math.Pi * 2 * num / connections.size) + 1) * midX)
+			def xFor(num: Int, diam: Int, midX: Int) = round(Math.cos(Math.Pi * 2 * num / connections.size) * diam) + midX
 
-			def yFor(num: Double, midY: Int) = round((Math.sin(Math.Pi * 2 * num / connections.size) + 1) * midY)
+			def yFor(num: Int, diam: Int, midY: Int) = round(Math.sin(Math.Pi * 2 * num / connections.size) * diam) + midY
 			
 			def round(d: Double) = Math.round(d).asInstanceOf[Int]
 
   			def drawPeer(n: Int, g: Graphics2D, midX: Int, midY: Int, peerDiam: Int, peer: PeerRec) {
-  				val x = xFor(n, midX) - peerDiam
-  				val y = yFor(n, midY) - peerDiam
+				val diam = Math.min(midX, midY) - peerDiam
+  				val x = xFor(n, diam, midX)
+  				val y = yFor(n, diam, midY)
 
   				g.draw(new Line2D.Float(midX, midY, x, y))
-  				drawPeerShape(n + 1, g, x, y, peer)
+  				drawPeerShape(g, x, y, peer)
   			}
 
-			def drawPeerShape(n: Int, g: Graphics2D, x: Int, y: Int, peer: PeerRec) {
-				val s = n.toString
+			def drawPeerShape(g: Graphics2D, x: Int, y: Int, peer: PeerRec) {
+				val s = str(peer.peerId)
 				val met = g.getFontMetrics
 				val lmet = g.getFontMetrics.getLineMetrics(s, g)
 				val sb = met.getStringBounds(s, g)
 
-				peerRect.setRoundRect(x - (peerRect.getWidth + 1) / 2, y - (peerRect.getHeight + 1) / 2, peerRect.getWidth, peerRect.getHeight, peerRect.getArcWidth, peerRect.getArcHeight)
-				g.setPaint(SystemColor.control)
+//				peerRect.setRoundRect(x - (peerRect.getWidth + 1) / 2, y - (peerRect.getHeight + 1) / 2, peerRect.getWidth, peerRect.getHeight, peerRect.getArcWidth, peerRect.getArcHeight)
+				peerRect.setRoundRect(x - (sb.getWidth + 1) / 2 - 5, y - (sb.getHeight + 1) / 2 - 5, sb.getWidth + 10, sb.getHeight + 10, peerRect.getArcWidth, peerRect.getArcHeight)
+//				g.setPaint(SystemColor.control)
+				g.setPaint(Color.white)
 				g.fill(peerRect)
 				g.setPaint(Color.black)
 				g.draw(peerRect)
@@ -80,7 +85,7 @@ object MonitoringView {
 //		contents = new SplitPane(Orientation.Horizontal, diagram, output) {
 //			dividerLocation = 0.75
 //		}
-		size = (400, 300)
+		size = (800, 600)
 		open
 	}
 
@@ -111,9 +116,10 @@ object MonitoringView {
 		})
 		for (peerRec <- connections.get(peerid)) peerRec.addTopic(tp)
 		println("Join topic peer: "+str(peerid)+", space: "+space+", topic: "+topic)
+		update
 	}
 	
-	def update = frame.diagram.peer.invalidate
+	def update = frame.diagram.peer.repaint()
 
 	def setMaster(con: PeerConnection) {
 		myMaster = new PeerRec(con.peerId, str(con.address))
