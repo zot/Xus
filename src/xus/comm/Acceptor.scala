@@ -6,6 +6,7 @@
 package xus.comm;
 
 import Util._
+import Peer._
 import java.net._
 import java.nio.channels._
 import scala.actors.Actor._

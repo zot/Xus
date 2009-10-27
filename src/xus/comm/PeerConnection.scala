@@ -53,12 +53,12 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	// peer-to-peer messages
 	//
 	// request: challenge, response: challengeResponse
-	def challenge(token: String, msgId: Int = -1)(implicit block: (Response) => Unit) = {
+	def challenge(token: String, msgId: Int = -1)(implicit block: (Response) => Any) = {
 		authenticationToken = token
 		send(new Challenge, <challenge token={token} msgid={msgIdFor(msgId)} requestid={str(-1)}/>)(block)
 	}
 
-	def challengeResponse(token: String, challengeToken: String, requestId: Int, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def challengeResponse(token: String, challengeToken: String, requestId: Int, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new ChallengeResponse, sign(<challenge-response token={token} challengetoken={challengeToken} requestid={str(requestId)} msgid={msgIdFor(msgId)}/>))(block)
 
 	// request: direct, response: completed or failed
@@ -75,16 +75,16 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	//
 	// peer-to-space messages
 	//
-	def broadcast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def broadcast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new Broadcast, <broadcast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</broadcast>)(block)
 
-	def unicast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def unicast(space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new Unicast, <unicast space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</unicast>)(block)
 
-	def dht(space: Int, topic: Int, key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def dht(space: Int, topic: Int, key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new DHT, <dht space={str(space)} topic={str(topic)} key={str(key)} msgid={msgIdFor(msgId)}>{payload}</dht>)(block)
 
-	def delegate(peer: Int, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def delegate(peer: Int, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new DelegateDirect, <delegate space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegate>)(block)
 
 	//
@@ -94,13 +94,13 @@ class PeerConnection(var con: SimpyPacketConnectionAPI, val peer: Peer) {
 	def delegatedBroadcast(sender: BigInt, space: Int, topic: Int,  payload: Any, msgId: Int = -1) =
 		send(new DelegatedBroadcast, <delegated-broadcast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegated-broadcast>)
 
-	def delegatedUnicast(sender: BigInt, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def delegatedUnicast(sender: BigInt, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new DelegatedUnicast, <delegated-unicast sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegated-unicast>)(block)
 
-	def delegatedDht(sender: BigInt, space: Int, topic: Int, key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def delegatedDht(sender: BigInt, space: Int, topic: Int, key: BigInt, payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new DelegatedDHT, <delegated-dht sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegated-dht>)(block)
 
-	def delegatedDirect(sender: BigInt, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) =
+	def delegatedDirect(sender: BigInt, space: Int, topic: Int,  payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) =
 		send(new DelegatedDirect, <delegated-direct sender={str(sender)} space={str(space)} topic={str(topic)} msgid={msgIdFor(msgId)}>{payload}</delegated-direct>)(block)
 
 	//

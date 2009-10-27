@@ -16,9 +16,9 @@ class PropertiesConnection(topic: TopicConnection) extends ServiceConnection(top
 		}
 	}
 	def getprop(name: String) = peer.getProp(topic.propsKey, name)
-	def setprop(name: String, value: String, persist: Boolean)(implicit block: (Response) => Unit) =
+	def setprop(name: String, value: String, persist: Boolean)(implicit block: (Response) => Any) =
 		topic.broadcast(Properties(<setprop name={name} value={value} persist={persist.toString}/>))(block)
-	def delprop(name: String, value: String)(implicit block: (Response) => Unit) =
+	def delprop(name: String, value: String)(implicit block: (Response) => Any) =
 		topic.broadcast(Properties(<delprop name={name}/>))(block)
 	def receiveDeleteProp(msg: DelegatedBroadcast, name: String) {
 		for {

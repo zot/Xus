@@ -7,6 +7,7 @@ package xus.testing
 
 import xus.comm._
 import xus.comm.Util._
+import xus.comm.Peer._
 import scala.xml.Node
 import scala.xml.persistent.SetStorage
 import scala.actors.Actor

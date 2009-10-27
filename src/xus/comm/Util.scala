@@ -217,6 +217,14 @@ object Util {
 		digest.reset
 		i
 	}
+	def findDht(key: BigInt, peers: Seq[PeerConnection]) = {
+		peers.foldLeft((peers.head,peers.head.peerId.abs + peers.last.peerId.abs)) {
+		case ((member, distance), cur) =>
+			val dist = (cur.peerId - key).abs
+
+			if (dist < distance || (dist == distance && key < cur.peerId)) (cur, dist) else (member, distance)
+		}._1
+	}
 	def nactor(name: String)(body: => Unit): Actor = {
 		val a = new Actor {
 			def act() = body

@@ -27,7 +27,7 @@ object Protocol {
 		new DelegatedBroadcast().entry,
 		new DelegatedUnicast().entry)
 	implicit object PeerConnectionOrdering extends Ordering[PeerConnection] {
-		def compare(a: PeerConnection, b: PeerConnection) = a.peerId.compareTo(b.peerId)
+		def compare(a: PeerConnection, b: PeerConnection) = a.peerId.compare(b.peerId)
 	}
 }
 

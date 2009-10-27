@@ -15,6 +15,7 @@ import java.security.PublicKey
 import java.net.InetSocketAddress
 import Protocol._
 import Util._
+import Peer._
 
 class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection) {
 	var joined = false
@@ -70,24 +71,24 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	//
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def direct(payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.direct(payload, msgId)(block)
+	def direct(payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.direct(payload, msgId)(block)
 
 	//
 	// peer-to-space messages
 	//
-	def broadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit): Unit = owner.broadcast(space, topic, payload, msgId)(block)
+	def broadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any): Unit = owner.broadcast(space, topic, payload, msgId)(block)
 
-	def unicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.unicast(space, topic, payload, msgId)(block)
+	def unicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.unicast(space, topic, payload, msgId)(block)
 
-	def dht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.dht(space, topic, key, payload, msgId)(block)
+	def dht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.dht(space, topic, key, payload, msgId)(block)
 
-	def delegate(peer: Int, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, payload, msgId)(block)
+	def delegate(peer: Int, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.delegate(peer, space, topic, payload, msgId)(block)
 
-	def optBroadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit): Unit = ifAnyone(broadcast(payload, msgId)(block))
+	def optBroadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any): Unit = ifAnyone(broadcast(payload, msgId)(block))
 
-	def optUnicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(unicast(payload, msgId)(block))
+	def optUnicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = ifAnyone(unicast(payload, msgId)(block))
 
-	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(dht(key, payload, msgId)(block))
+	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = ifAnyone(dht(key, payload, msgId)(block))
 
 	// hooks
 	def receive(msg: DelegatedBroadcast) = {
@@ -139,7 +140,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	}
 
 	def nodesForJoinResponse = {
-		println("sorted services: " + List.fromIterator(services.values).sort(newServiceSortBlock))
+//		println("sorted services: " + List.fromIterator(services.values).sort(newServiceSortBlock))
 		List.fromIterator(services.values).sort(newServiceSortBlock).foldLeft(List[Node]()) {(list, svc) => svc.newMembersNode.map(_ :: list) getOrElse list}
 	}
 
@@ -197,7 +198,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	def process(dht: DHT) = {
 		authorize(dht) {
 			if (!servicesDo(dht)(_.process(dht, _))) {
-				findDht(dht).delegatedDht(dht.sender, dht.space, dht.topic, dht.key, dht.node.child) {
+				findDht(dht.key, members).delegatedDht(dht.sender, dht.space, dht.topic, dht.key, dht.node.child) {
 				case c: Completed => dht.completed(c.payload)
 				case f: Failed => dht.failed(f.payload)
 				}
@@ -206,7 +207,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	}
 	
 	def dht(msg: DHT) {
-		findDht(msg).delegatedDht(msg.sender, msg.space, msg.topic, msg.key, msg.node.child) {
+		findDht(msg.key, members).delegatedDht(msg.sender, msg.space, msg.topic, msg.key, msg.node.child) {
 		case c: Completed => msg.completed(c.payload)
 		case f: Failed => msg.failed(f.payload)
 		}
@@ -246,17 +247,6 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 
 	// utils
 	def delegateResponse(msg: Message) = peer.onResponseDo(msg)(peer.delegateResponse(msg, _))
-
-	def findDht(dht: DHT) = {
-		val key = dht.key
-
-		members.foldLeft((members.head,members.head.peerId.abs + members.last.peerId.abs)) {
-		case ((member, distance), cur) =>
-			val dist = (cur.peerId - key).abs;
-
-			if (dist < distance) (cur, dist) else (member, distance)
-		}._1
-	}
 
 	override def toString = "TopicMaster "+space+", "+topic
 
