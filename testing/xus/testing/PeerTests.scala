@@ -387,7 +387,7 @@ class TestPeer(name: String) extends Peer(name) {
 		lastIdCon.msg = msg
 		super.received(msg)
 	}
-	override def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+	override def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Unit): PeerConnection = {
 		//split this creation into steps so the waiter is in place before the connection initiates
 		val pcon = new PeerConnection(null, this)
 

@@ -1,4 +1,4 @@
 .scala_dependencies
 bin
-bin-scala-patch
+patch-bin
 scratch

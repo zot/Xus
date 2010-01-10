@@ -71,24 +71,24 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 	//
 	// request: direct, response: completed or failed
 	// empty direct message functions as a ping
-	def direct(payload: Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.direct(payload, msgId)(block)
+	def direct(payload: Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.direct(payload, msgId)(block)
 
 	//
 	// peer-to-space messages
 	//
-	def broadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any): Unit = owner.broadcast(space, topic, payload, msgId)(block)
+	def broadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit): Unit = owner.broadcast(space, topic, payload, msgId)(block)
 
-	def unicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.unicast(space, topic, payload, msgId)(block)
+	def unicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.unicast(space, topic, payload, msgId)(block)
 
-	def dht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.dht(space, topic, key, payload, msgId)(block)
+	def dht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.dht(space, topic, key, payload, msgId)(block)
 
-	def delegate(peer: Int, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = owner.delegate(peer, space, topic, payload, msgId)(block)
+	def delegate(peer: Int, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = owner.delegate(peer, space, topic, payload, msgId)(block)
 
-	def optBroadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any): Unit = ifAnyone(broadcast(payload, msgId)(block))
+	def optBroadcast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit): Unit = ifAnyone(broadcast(payload, msgId)(block))
 
-	def optUnicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = ifAnyone(unicast(payload, msgId)(block))
+	def optUnicast(payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(unicast(payload, msgId)(block))
 
-	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Any) = ifAnyone(dht(key, payload, msgId)(block))
+	def optDht(key: BigInt, payload: => Any, msgId: Int = -1)(implicit block: (Response) => Unit) = ifAnyone(dht(key, payload, msgId)(block))
 
 	// hooks
 	def receive(msg: DelegatedBroadcast) = {
@@ -163,7 +163,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 
 	def servicesFor(msg: PeerToSpaceMessage) = msg.payload match {case Seq(n: Node) => servicesByName.get(n.label); case _ => None}
 	
-	def servicesDo(msg: PeerToSpaceMessage)(block: (ServiceMaster, Node) => Any) = {
+	def servicesDo(msg: PeerToSpaceMessage)(block: (ServiceMaster, Node) => Unit) = {
 		!(for {
 			n <- msg.payload
 			svc <- servicesByName.get(n.label)
@@ -226,7 +226,7 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	 * allow unlimited broadcasting by default
 	 * override this to fail if the message is not authorized
 	 */
-	def authorize(message: Message)(block: => Any) = {
+	def authorize(message: Message)(block: => Unit) = {
 		if (members.contains(message.con)) block
 		else message.failed("Peer not a member of this topic")
 	}

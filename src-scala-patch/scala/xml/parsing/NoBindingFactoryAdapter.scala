@@ -1,28 +1,30 @@
-// temporary patch to this until it is fixed in the Scala distro
-
 /*                     __                                               *\
 **     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2009, LAMP/EPFL             **
+**    / __/ __// _ | / /  / _ |    (c) 2003-2010, LAMP/EPFL             **
 **  __\ \/ /__/ __ |/ /__/ __ |                                         **
 ** /____/\___/_/ |_/____/_/ | |                                         **
 **                          |/                                          **
 \*                                                                      */
 
-// $Id: NoBindingFactoryAdapter.scala 18387 2009-07-24 15:28:37Z odersky $
+// $Id: NoBindingFactoryAdapter.scala 20028 2009-12-07 11:49:19Z cunei $
 
 package scala.xml
 package parsing
 
-import scala.xml.factory.NodeFactory
+import factory.NodeFactory
+import collection.Seq
+import collection.immutable.List
 import org.xml.sax.InputSource
 import javax.xml.parsers.{ SAXParser, SAXParserFactory }
+import org.xml.sax.{ Attributes }
 
 /** nobinding adaptor providing callbacks to parser to create elements.
 *   implements hash-consing
 */
 class NoBindingFactoryAdapter extends FactoryAdapter with NodeFactory[Elem]
 {
-//	println("INIT NO BINDING")
+  scopeStack push TopScope
+
   /** True.  Every XML node may contain text that the application needs */
   def nodeContainsText(label: String) = true
 
@@ -39,4 +41,12 @@ class NoBindingFactoryAdapter extends FactoryAdapter with NodeFactory[Elem]
 
   /** Creates a processing instruction. */
   def createProcInstr(target: String, data: String) = makeProcInstr(target, data)
+  override def startElement(
+    uri: String,
+    _localName: String,
+    qname: String,
+    attributes: Attributes): Unit =
+  {
+	  super.startElement(uri, _localName, qname, attributes)
+  }
 }

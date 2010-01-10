@@ -91,7 +91,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		else if (wait) inputActor !? new WaitBlock(block)
 		else inputActor ! (()=>block)
 	}
-	def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Any): PeerConnection = {
+	def connect(host: String, port: Int, expectedPeerId: BigInt)(implicit connectBlock: (Response)=>Unit): PeerConnection = {
 		//this creation is split into steps so the waiter is in place before the connection initiates
 		val pcon = new PeerConnection(null, this)
 
@@ -364,7 +364,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		inputOnly
 		import scala.xml.NodeSeq._
 		<xus-props name={name}>{
-			for ((name, prop) <- props.getOrElse(name, emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {case ((k1, _), (k2, _)) => k1 < k2})
+			for ((name, prop) <- props.getOrElse(name, emptyProps).toSeq filter {case (k, v) => v.persist} sortWith {(a: Tuple2[String, Property], b: Tuple2[String, Property]) => (a,b) match {case ((k1, _), (k2, _)) => k1 < k2}})
 				yield <prop name={name} value={prop.value}/>
 		}</xus-props>
 	}

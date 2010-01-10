@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="src" output="patch-bin" path="src-scala-patch"/>
 	<classpathentry kind="src" path="monitoring"/>
 	<classpathentry kind="src" path="testing"/>
 	<classpathentry kind="con" path="ch.epfl.lamp.sdt.launching.SCALA_CONTAINER"/>

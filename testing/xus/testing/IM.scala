@@ -90,7 +90,7 @@ object IM extends Peer("IM") {
 		def createMaster(master: TopicMaster) = new ServiceMaster(master)
 	}
 	class ChatConnection(topic: TopicConnection) extends ServiceConnection(topic) {
-		def sendChat(msg: String)(implicit block: (Response) => Any) = topic.broadcast(Chat(<chat>{msg}</chat>))(block)
+		def sendChat(msg: String)(implicit block: (Response) => Unit) = topic.broadcast(Chat(<chat>{msg}</chat>))(block)
 
 		override def receive(msg: DelegatedBroadcast, node: Node) {
 			for (n <- node.child) n match {
