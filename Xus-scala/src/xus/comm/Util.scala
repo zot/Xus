@@ -212,6 +212,7 @@ object Util {
 		}
 	}
 	def bytesForHex(str: String) = (for (i <- 0 until str.length by 2) yield java.lang.Byte.parseByte(str.slice(i, i + 2), 16)).toArray[Byte]
+	def digestInt(string: String): BigInt = digestInt(string.getBytes())
 	def digestInt(bytes: Array[Byte]) = {
 		val i = BigInt(digest.digest(bytes))
 		digest.reset

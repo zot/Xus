@@ -44,7 +44,23 @@ object FileSharing extends ServiceFactory[FileSharingConnection,FileSharingMaste
 }
 
 class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(topic) {
-	override def receive(msg: DelegatedDHT, node: Node) {
+	def storeTag(tagId: BigInt, peerId: String, message: String, tagType: String, name: String, objectId: String, chunkListId: String) {
+		topic.dht(tagId, <store-tag tagId={str(tagId)} taggerIdent={peerId} message={message} type={tagType} name={name} objectId={objectId} chunkListId={chunkListId}/>) {response =>}
+	}
+
+	def retrieveTag(tagId: BigInt) {
+		topic.dht(tagId, <retrieve-tag tagId={str(tagId)}/>) {response =>}
+	}
+	
+	def storeChunk() {
+		
+	}
+}
+
+class FileSharingMaster(master: TopicMaster) extends ServiceMaster(master) {
+	override def newMembersNode = None
+
+	override def process(msg: DHT, node: Node) {
 		for (n <- node.child) n match {
 		case Seq(<store-tag/>) =>
 			for {
@@ -56,42 +72,29 @@ class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(to
 				objectId <- strOpt(n, "objectId")
 				chunkListId <- strOpt(n, "chunkListId")
 			} {
-				storeTag(msg, tagId, peerId, message, tagType, name, objectId, chunkListId)
+				processStoreTag(msg, tagId, peerId, message, tagType, name, objectId, chunkListId)
 			}
-		case Seq(<retrieve-tag>{tagId}</retrieve-tag>) => retrieveTag(msg, tagId.mkString)
-		case Seq(<store-manifest-chunklist>{data}</store-manifest-chunklist>) => storeManifestChunkList(msg, bytesFor(data.mkString))
-		case Seq(<retrieve-manifest-chunklist>{data}</retrieve-manifest-chunklist>) => retrieveManifestChunkList(msg)
-		case Seq(<store-chunk>{data}</store-chunk>) => storeChunk(msg, bytesFor(data.mkString))
-		case Seq(<retrieve-chunk>{data}</retrieve-chunk>) => retrieveChunk(msg)
+		case Seq(<retrieve-tag>{tagId}</retrieve-tag>) => processRetrieveTag(msg, tagId.mkString)
+		case Seq(<store-chunk>{data}</store-chunk>) => processStoreChunk(msg, bytesFor(data.mkString))
+		case Seq(<retrieve-chunk>{data}</retrieve-chunk>) => processRetrieveChunk(msg)
 		case _ =>
 		}
 	}
 
-	def storeTag(msg: DelegatedDHT, tagId: String, peerId: String, messageId: String, tagType: String, name: String, objectId: String, chunkListId: String) {
+	def processStoreTag(msg: DHT, tagId: String, peerId: String, message: String, tagType: String, name: String, objectId: String, chunkListId: String) {
 		msg.completed()
 	}
 
-	def retrieveTag(msg: DelegatedDHT, tagId: String) {
+	def processRetrieveTag(msg: DHT, tagId: String) {
 		msg.completed()
 	}
 
-	def storeManifestChunkList(msg: DelegatedDHT, data: Array[Byte]) {
+	def processStoreChunk(msg: DHT, data: Array[Byte]) {
 		msg.completed()
 	}
 
-	def retrieveManifestChunkList(msg: DelegatedDHT) {
-		msg.completed()
-	}
-
-	def storeChunk(msg: DelegatedDHT, data: Array[Byte]) {
-		msg.completed()
-	}
-
-	def retrieveChunk(msg: DelegatedDHT) {
+	def processRetrieveChunk(msg: DHT) {
 		msg.completed()
 	}
 }
 
-class FileSharingMaster(master: TopicMaster) extends ServiceMaster(master) {
-	override def newMembersNode = None
-}
