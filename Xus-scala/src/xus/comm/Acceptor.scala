@@ -13,32 +13,6 @@ import scala.actors.Actor._
 import scala.collection.JavaConversions._
 import scala.collection.mutable.{Map => MMap}
 
-object Acceptor {
-	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
-		peer.addConnection(newCon).challenge(randomInt(1000000000).toString)
-	}
-	def listenCustom(port: Int, peer: SimpyPacketPeerAPI)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
-		listen(port) {chan =>
-			new Acceptor(chan, peer) {
-				override def newConnection(connection: SocketChannel) = {
-					val con: SimpyPacketConnection = SimpyPacketConnection(connection, peer, Some(this))
-					
-					connectionHandler(con)
-					con
-				}
-			}
-		}
-	}
-	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port)(new Acceptor(_, peer))
-	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
-		val sock = ServerSocketChannel.open
-
-		sock.configureBlocking(false)
-		sock.socket.bind(new InetSocketAddress(port))
-		Connection.addConnection(socketHandler(sock))
-	}
-}
-
 class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerAPI) extends Connection[ServerSocketChannel](serverChan) {
 	import Connection._
 
@@ -64,5 +38,31 @@ class Acceptor(serverChan: ServerSocketChannel, peer: SimpyPacketPeerAPI) extend
 	override def close {
 		serverChan.close
 		super.close
+	}
+}
+
+object Acceptor {
+	def listen(port: Int, peer: Peer) = listenCustom(port, peer){newCon: SimpyPacketConnection =>
+		peer.addConnection(newCon).challenge(randomInt(1000000000).toString)
+	}
+	def listenCustom(port: Int, peer: SimpyPacketPeerAPI)(connectionHandler: (SimpyPacketConnection) => Any): Acceptor = {
+		listen(port) {chan =>
+			new Acceptor(chan, peer) {
+				override def newConnection(connection: SocketChannel) = {
+					val con: SimpyPacketConnection = SimpyPacketConnection(connection, peer, Some(this))
+					
+					connectionHandler(con)
+					con
+				}
+			}
+		}
+	}
+	def listen(port: Int, peer: SimpyPacketPeerAPI): Acceptor = listen(port)(new Acceptor(_, peer))
+	def listen(port: Int)(socketHandler: (ServerSocketChannel) => Acceptor): Acceptor = {
+		val sock = ServerSocketChannel.open
+
+		sock.configureBlocking(false)
+		sock.socket.bind(new InetSocketAddress(port))
+		Connection.addConnection(socketHandler(sock))
 	}
 }

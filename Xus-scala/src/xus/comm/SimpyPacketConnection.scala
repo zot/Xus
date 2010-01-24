@@ -29,23 +29,6 @@ trait SimpyPacketPeerAPI {
 	def closed(con: SimpyPacketConnectionAPI)
 }
 
-object SimpyPacketConnection {
-	import Connection._
-	
-	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
-	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Unit): SimpyPacketConnection =
-		apply(host, port, peer, (chan, peer, optAcc) => this(chan, peer, None))(conBlock)
-	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI, create: (SocketChannel, SimpyPacketPeerAPI, Option[Acceptor]) => SimpyPacketConnection)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
-		val chan = SocketChannel.open
-			
-		chan.configureBlocking(false)
-		val con = addConnection(create(chan, peer, None))
-		conBlock(con)
-		chan.connect(new InetSocketAddress(host, port))
-		con
-	}
-}
-
 class DirectSimpyPacketConnection(val peer: SimpyPacketPeerAPI, var otherEnd: DirectSimpyPacketConnection) extends SimpyPacketConnectionAPI {
 	var msgId = -1
 
@@ -230,5 +213,22 @@ class SimpyPacketConnection(clientChan: SocketChannel, peer: SimpyPacketPeerAPI,
 		if (key.isWritable) outputActor ! 1
 		if (key.isConnectable && chan.isConnectionPending) chan.finishConnect()
 		super.handle(key)
+	}
+}
+
+object SimpyPacketConnection {
+	import Connection._
+	
+	def apply(connection: SocketChannel, peer: SimpyPacketPeerAPI, optAcceptor: Option[Acceptor]) = new SimpyPacketConnection(connection, peer, optAcceptor)
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI)(conBlock: (SimpyPacketConnection)=>Unit): SimpyPacketConnection =
+		apply(host, port, peer, (chan, peer, optAcc) => this(chan, peer, None))(conBlock)
+	def apply(host: String, port: Int, peer: SimpyPacketPeerAPI, create: (SocketChannel, SimpyPacketPeerAPI, Option[Acceptor]) => SimpyPacketConnection)(conBlock: (SimpyPacketConnection)=>Any): SimpyPacketConnection = {
+		val chan = SocketChannel.open
+			
+		chan.configureBlocking(false)
+		val con = addConnection(create(chan, peer, None))
+		conBlock(con)
+		chan.connect(new InetSocketAddress(host, port))
+		con
 	}
 }

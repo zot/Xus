@@ -13,6 +13,16 @@ import scala.actors.Actor._
 import scala.actors.TIMEOUT
 import Util._
 
+abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
+	def register
+
+	def close {
+		chan.keyFor(Connection.selector).cancel
+	}
+
+	def handle(key: SelectionKey) = ()
+}
+
 object Connection {
 	val buffers = new ArrayStack[ByteBuffer]
 	val BUFFER_SIZE = 1024 * 1024
@@ -79,14 +89,4 @@ object Connection {
 		queue(newCon)
 		newCon
 	}
-}
-
-abstract class Connection[CHAN <: SelectableChannel](val chan: CHAN) {
-	def register
-
-	def close {
-		chan.keyFor(Connection.selector).cancel
-	}
-
-	def handle(key: SelectionKey) = ()
 }

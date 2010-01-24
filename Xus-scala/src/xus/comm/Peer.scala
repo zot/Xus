@@ -21,20 +21,6 @@ import scala.xml.persistent.SetStorage
 
 import Util._
 
-object Peer {
-	val emptyProps = PMap[String, Property]()
-//	var waitBlockNum = 0
-	implicit val emptyHandler = (r: Response) => ()
-	implicit val emptyConnectBlock = () => ()
-
-	implicit def hashMapToPropertyMap(m: PMap[String,Property]) = new {
-		def + (tuple: ((String, Boolean), String)) = {
-			val ((key, persist), value) = tuple
-
-			m.+(key -> new Property(key, value, persist))
-		}
-	}
-}
 class WaitBlock(block: => Any) {
 //	val num = Peer.waitBlockNum
 //	Peer.waitBlockNum += 1
@@ -47,6 +33,7 @@ class WaitBlock(block: => Any) {
 	}
 //	override def toString = "WaitBlock: "+num
 }
+
 class Peer(name: String) extends SimpyPacketPeerAPI {
 	import Peer._
 
@@ -418,6 +405,21 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 		}
 	}
 	override def toString = "Peer(" + name + ", " + str(peerId) + ")"
+}
+
+object Peer {
+	val emptyProps = PMap[String, Property]()
+//	var waitBlockNum = 0
+	implicit val emptyHandler = (r: Response) => ()
+	implicit val emptyConnectBlock = () => ()
+
+	implicit def hashMapToPropertyMap(m: PMap[String,Property]) = new {
+		def + (tuple: ((String, Boolean), String)) = {
+			val ((key, persist), value) = tuple
+
+			m.+(key -> new Property(key, value, persist))
+		}
+	}
 }
 
 class Property(val name: String, var value: String, var persist: Boolean)

@@ -11,26 +11,6 @@ import java.security.PublicKey
 import com.sun.xml.internal.fastinfoset.sax.SAXDocumentSerializer
 import Util._
 
-object Protocol {
-	val messageMap = Map(
-		new Challenge().entry,
-		new ChallengeResponse().entry,
-		new Completed().entry,
-		new Failed().entry,
-		new Direct().entry,
-		new DHT().entry,
-		new Broadcast().entry,
-		new Unicast().entry,
-		new DelegateDirect().entry,
-		new DelegatedDirect().entry,
-		new DelegatedDHT().entry,
-		new DelegatedBroadcast().entry,
-		new DelegatedUnicast().entry)
-	implicit object PeerConnectionOrdering extends Ordering[PeerConnection] {
-		def compare(a: PeerConnection, b: PeerConnection) = a.peerId.compare(b.peerId)
-	}
-}
-
 abstract class Message(val nodeName: String) extends Cloneable {
 	var con: PeerConnection = null
 	var node: Node = null
@@ -139,4 +119,24 @@ class DelegatedBroadcast extends SpaceToPeerMessage("delegated-broadcast") {
 }
 class DelegatedUnicast extends SpaceToPeerMessage("delegated-unicast") {
 	def dispatch(peer: Peer) = peer.receive(this)
+}
+
+object Protocol {
+	val messageMap = Map(
+		new Challenge().entry,
+		new ChallengeResponse().entry,
+		new Completed().entry,
+		new Failed().entry,
+		new Direct().entry,
+		new DHT().entry,
+		new Broadcast().entry,
+		new Unicast().entry,
+		new DelegateDirect().entry,
+		new DelegatedDirect().entry,
+		new DelegatedDHT().entry,
+		new DelegatedBroadcast().entry,
+		new DelegatedUnicast().entry)
+	implicit object PeerConnectionOrdering extends Ordering[PeerConnection] {
+		def compare(a: PeerConnection, b: PeerConnection) = a.peerId.compare(b.peerId)
+	}
 }

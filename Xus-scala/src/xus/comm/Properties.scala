@@ -3,11 +3,6 @@ package xus.comm
 import scala.xml.Node
 import Util._
 
-object Properties extends ServiceFactory[PropertiesConnection,PropertiesMaster] {
-	def createConnection(topic: TopicConnection) = new PropertiesConnection(topic)
-	def createMaster(topic: TopicMaster) = new PropertiesMaster(topic)
-}
-
 class PropertiesConnection(topic: TopicConnection) extends ServiceConnection(topic) {
 	override def joined(nodes: Seq[Node]) {
 		for (n <- nodes) n match {
@@ -46,6 +41,11 @@ class PropertiesConnection(topic: TopicConnection) extends ServiceConnection(top
 		case n @ <delprop/> => for (name <- strOpt(n, "name")) receiveDeleteProp(msg, name)
 		}
 	}
+}
+
+object Properties extends ServiceFactory[PropertiesConnection,PropertiesMaster] {
+	def createConnection(topic: TopicConnection) = new PropertiesConnection(topic)
+	def createMaster(topic: TopicMaster) = new PropertiesMaster(topic)
 }
 
 class PropertiesMaster(master: TopicMaster) extends ServiceMaster(master) {
