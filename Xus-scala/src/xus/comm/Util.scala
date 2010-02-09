@@ -27,12 +27,12 @@ import scala.actors.Actor
 import scala.actors.DaemonActor
 import scala.actors.Actor._
 import scala.collection.JavaConversions
+import scala.collection.mutable.HashMap
 import scala.collection.immutable.Stream
 import java.io.File
 import java.io.Closeable
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.util.HashMap
 import java.security._
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -76,12 +76,15 @@ object Util {
 		JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.toSeq.flatMap(_.attributes).removeDuplicates.sortWith((a,b) => a < b).map(QName.valueOf(_))
 	}
 
-	implicit def file2RichFile(file: File): {def deleteAll} = new {
-		def deleteAll {
-			if (file.exists) {
-				if (file.isDirectory) file.listFiles.foreach(file2RichFile(_).deleteAll)
-				file.delete
-			}
+//	implicit def file2RichFile(file: File): {def deleteAll} = new {
+	implicit def file2RichFile(file: File) = new {
+		def /(name: String) = new File(file, name)
+		def deleteAll = Util.deleteAll(file)
+	}
+	def deleteAll(file: File) {
+		if (file.exists) {
+			if (file.isDirectory) file.listFiles.foreach(deleteAll(_))
+			file.delete
 		}
 	}
 	def randomInt(range: Int) = rand.nextInt(range)
@@ -236,7 +239,7 @@ object Util {
 		a
 	}
 	def daemonActor(name: String)(body: => Unit): Actor = {
-		val a = new DaemonActor {
+		val a = new PropertyActor {
 			def act() = body
 //			override final val scheduler: IScheduler = Actor.parentScheduler
 			override def toString = "DaemonActor(" + name + ")@" + System.identityHashCode(this)
@@ -318,4 +321,10 @@ class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extend
 	def this(bytes: Array[Byte]) = this(bytes, 0, bytes.length)
 	def bytes = buf
 	def memento = (pos, count, buf)
+}
+abstract class PropertyActor extends DaemonActor {
+	var properties = HashMap[String,Any]()
+}
+object PropertyActor {
+	def current = self.asInstanceOf[PropertyActor]
 }

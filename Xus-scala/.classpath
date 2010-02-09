@@ -4,7 +4,6 @@
 	<classpathentry kind="src" output="patch-bin" path="src-scala-patch"/>
 	<classpathentry kind="src" path="monitoring"/>
 	<classpathentry kind="src" path="testing"/>
-	<classpathentry kind="src" path="jgit"/>
 	<classpathentry kind="con" path="ch.epfl.lamp.sdt.launching.SCALA_CONTAINER"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>

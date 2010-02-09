@@ -38,6 +38,8 @@ class TopicConnection(val space: Int, val topic: Int, var owner: PeerConnection)
 		}).asInstanceOf[S]
 	}
 	
+	def setCurrent = PropertyActor.current.properties("topicConnection") = this
+
 	def isOwner = owner == peer.selfConnection
 
 	def join: this.type = {
@@ -129,6 +131,8 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 	var servicesByName = HashMap[String, ServiceMaster](TopicManagement.getClass.getName.toLowerCase -> management)
 	val newServiceSortBlock = (a: ServiceMaster, b: ServiceMaster) => !a.isInstanceOf[TopicManagementMaster] || b.isInstanceOf[TopicManagementMaster]
 
+	def setCurrent = PropertyActor.current.properties("topicMaster") = this
+
 	//protocol
 	/**
 	 * by default, allow any peer to join
@@ -186,7 +190,9 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 		members.foreach(_.delegatedBroadcast(sender, space, topic, payload))
 	}
 
-	def process(unicast: Unicast) = authorize(unicast) {if (!servicesDo(unicast)(_.process(unicast, _))) this.unicast(unicast)}
+	def process(unicast: Unicast) = {
+		authorize(unicast) {if (!servicesDo(unicast)(_.process(unicast, _))) this.unicast(unicast)}
+	}
 
 	def unicast(msg: Unicast) {
 		members(randomInt(members.length)).delegatedUnicast(msg.sender, msg.space, msg.topic, msg.node.child) {
@@ -213,7 +219,9 @@ class TopicMaster(val space: Int, val topic: Int, val peer: Peer) {
 		}
 	}
 
-	def process(delegate: DelegateDirect) = authorize(delegate) {if (!servicesDo(delegate)(_.process(delegate, _))) this.delegate(delegate)}
+	def process(delegate: DelegateDirect) = {
+		authorize(delegate) {if (!servicesDo(delegate)(_.process(delegate, _))) this.delegate(delegate)}
+	}
 
 	def delegate(msg: DelegateDirect) {
 		members.find(_.peerId == msg.receiver) match {
@@ -263,6 +271,10 @@ trait ServiceFactory[S <: ServiceConnection, M <: ServiceMaster] {
 	def apply(children: Node*) = Elem(null, getClass.getName.toLowerCase, null, TopScope, children: _*)
 
 	def unapply(n: Node) = if (n.label.toLowerCase == getClass.getName.toLowerCase) Some(n.child) else None
+
+	def currentConnection = TopicConnection.current.services(this).asInstanceOf[S]
+
+	def currentMaster = TopicConnection.current.services(this).asInstanceOf[M]
 }
 
 class ServiceConnection(val topic: TopicConnection) {
@@ -293,4 +305,12 @@ class ServiceMaster(val master: TopicMaster) {
 
 class TopicSpace {
 	var owners = List[PeerConnection]()
+}
+
+object TopicConnection {
+	def current = PropertyActor.current.properties("topicConnection").asInstanceOf[TopicConnection]
+}
+
+object TopicMaster {
+	def current = PropertyActor.current.properties("topicMaster").asInstanceOf[TopicMaster]
 }

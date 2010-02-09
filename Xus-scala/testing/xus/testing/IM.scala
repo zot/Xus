@@ -93,6 +93,7 @@ object IM extends Peer("IM") {
 		def sendChat(msg: String)(implicit block: (Response) => Unit) = topic.broadcast(Chat(<chat>{msg}</chat>))(block)
 
 		override def receive(msg: DelegatedBroadcast, node: Node) {
+			println("Chat connection: " + Chat.currentConnection)
 			for (n <- node.child) n match {
 			case <chat>{contents}</chat> =>
 				val doc = frame.output.peer.getDocument

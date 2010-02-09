@@ -9,6 +9,7 @@ import scala.xml.Elem
 import scala.xml.Node
 import scala.xml.NodeSeq
 import java.io.File
+import java.io.IOException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.security.KeyPair
@@ -40,6 +41,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	/**
 	 * storage should only be modified in the inputActor
 	 */
+	var storageDirectory: File = null
 	var storage: SetStorage = null
 	var waiters = PMap[(PeerConnection, Int), (Response)=>Any]()
 	var peerConnections = PMap[SimpyPacketConnectionAPI, PeerConnection]()
@@ -52,6 +54,7 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	var observers = Set[MonitorObserver]()
 	val selfConnection = createSelfConnection
 	val inputActor = daemonActor("Peer input") {
+		PropertyActor.current.properties("peer") = Peer.this
 		self link Util.actorExceptions
 		loop {
 			react {//case x => println("input received: "+x); x match {
@@ -275,19 +278,28 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// delegate broadcasting, etc to the topic
 	def receive(msg: Broadcast) {
-		ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
+		ownedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.setCurrent
+			topic.process(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: Unicast) {
-		ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
+		ownedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.process(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: DHT) {
-		ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
+		ownedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.process(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: DelegateDirect) {
-		ownedTopic(msg.space, msg.topic).foreach(_.process(msg))
+		ownedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.process(msg)
+		}
 		basicReceive(msg)
 	}
 
@@ -297,19 +309,31 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	//
 	// delegate message reception handling to the topic
 	def receive(msg: DelegatedBroadcast) {
-		joinedTopic(msg.space, msg.topic).foreach(_.receive(msg))
+		joinedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.setCurrent
+			topic.receive(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: DelegatedUnicast) {
-		joinedTopic(msg.space, msg.topic).foreach(_.receive(msg))
+		joinedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.setCurrent
+			topic.receive(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: DelegatedDHT) {
-		joinedTopic(msg.space, msg.topic).foreach(_.receive(msg))
+		joinedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.setCurrent
+			topic.receive(msg)
+		}
 		basicReceive(msg)
 	}
 	def receive(msg: DelegatedDirect) {
-		joinedTopic(msg.space, msg.topic).foreach(_.receive(msg))
+		joinedTopic(msg.space, msg.topic).foreach {topic =>
+			topic.setCurrent
+			topic.receive(msg)
+		}
 		basicReceive(msg)
 	}
 
@@ -385,7 +409,13 @@ class Peer(name: String) extends SimpyPacketPeerAPI {
 	}
 	def readStorage(f: File) {
 		inputDo {
-			val str = new SetStorage(f)
+			if (f.exists && !f.isDirectory) {
+				throw new IOException("Peer storage is not a directory: " + f)
+			} else if (!f.exists) {
+				f.mkdirs
+			}
+			storageDirectory = f
+			val str = new SetStorage(new File(f, "properties"))
 			storage = null
 			for (n <- str.nodes) useProps(n)
 			storage = str
@@ -420,6 +450,7 @@ object Peer {
 			m.+(key -> new Property(key, value, persist))
 		}
 	}
+	def current = self.asInstanceOf[PropertyActor].properties("peer").asInstanceOf[Peer]
 }
 
 class Property(val name: String, var value: String, var persist: Boolean)
