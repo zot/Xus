@@ -33,6 +33,7 @@ import java.io.File
 import java.io.Closeable
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.security._
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -47,6 +48,14 @@ import com.sun.xml.internal.fastinfoset.algorithm.BASE64EncodingAlgorithm
 import com.sun.xml.internal.org.jvnet.fastinfoset.Vocabulary
 import com.sun.xml.internal.fastinfoset.vocab.ParserVocabulary
 import com.sun.xml.internal.fastinfoset.vocab.SerializerVocabulary
+import org.eclipse.jgit.lib.Commit
+import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.ObjectWriter
+import org.eclipse.jgit.lib.PersonIdent
+import org.eclipse.jgit.lib.RefUpdate
+import org.eclipse.jgit.lib.Repository
+import org.eclipse.jgit.lib.Tree
 
 object Xus {
 	def shutdown {
@@ -316,7 +325,82 @@ object Util {
 		}
 		else children foreach { toXML(_, pscope, sb) }
 	}
+	
+	def pathsDo(dir: File)(block: (File) => Any) {
+		for (file <- dir.listFiles) {
+			block(file)
+			if (file.isDirectory) {
+				pathsDo(file)(block)
+			}
+		}
+	}
+
+	def commit(commitMsg: String, author: PersonIdent, committer: PersonIdent, repo: Repository) {
+		// prepare the tree
+		var root = repo.mapTree(Constants.HEAD)
+		var index = repo.getIndex()
+		var repoPath = repo.getDirectory
+
+		if (root == null) root = new Tree(repo)
+		pathsDo(repoPath) {f =>
+			var relativePath = chopPrefix(repoPath, f)
+			var entry = root.findBlobMember(relativePath)
+	
+			if (entry != null) entry.delete
+			var indexEntry = index.getEntry(relativePath)
+			if (indexEntry == null) indexEntry = index.add(repoPath, f)
+			root.addFile(relativePath)
+			root.findBlobMember(relativePath).setId(indexEntry.getObjectId())
+		}
+		// do the commit
+		writeTreeWithSubtrees(root, repo)
+		var currentHeadId = repo.resolve(Constants.HEAD)
+		var parentIds = if (currentHeadId == null) {
+			Array(currentHeadId)
+		} else {
+			Array[ObjectId]()
+		}
+		var commit = new Commit(repo, parentIds)
+		commit.setTree(root)
+		commit.setMessage(commitMsg)
+		commit.setAuthor(author)
+		commit.setCommitter(committer)
+		var writer = new ObjectWriter(repo)
+		commit.setCommitId(writer.writeCommit(commit))
+		var refUpdate = repo.updateRef(Constants.HEAD)
+		refUpdate.setNewObjectId(commit.getCommitId())
+		refUpdate.setRefLogMessage(buildReflogMessage(commitMsg), false);
+		if (refUpdate.forceUpdate() == RefUpdate.Result.LOCK_FAILURE) {
+			throw new IOException("Failed to update " + refUpdate.getName + " to commit " + commit.getCommitId + ".");
+		}
+	}
+
+	def chopPrefix(prefix: File, child: File) = child.getAbsolutePath.substring(prefix.getAbsolutePath.length + 1)
+
+	def buildReflogMessage(commitMessage: String) = {
+		var firstLine = commitMessage;
+		var newlineIndex = commitMessage.indexOf("\n");
+
+		if (newlineIndex > 0) {
+			firstLine = commitMessage.substring(0, newlineIndex);
+		}
+		"commit: " + firstLine;
+	}
+
+	def writeTreeWithSubtrees(tree: Tree, repo: Repository) {
+		for (treeEntry <- tree.members()) {
+			if (treeEntry.isModified()) {
+				if (treeEntry.isInstanceOf[Tree]) writeTreeWithSubtrees(treeEntry.asInstanceOf[Tree], repo)
+				else {
+					// error -- only trees should be modified
+				}
+			}
+		}
+		var writer = new ObjectWriter(repo)
+		tree.setId(writer.writeTree(tree))
+	}
 }
+
 class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extends ByteArrayInputStream(bytes, offset, len) {
 	def this(bytes: Array[Byte]) = this(bytes, 0, bytes.length)
 	def bytes = buf

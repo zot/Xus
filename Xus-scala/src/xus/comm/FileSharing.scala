@@ -4,6 +4,7 @@ import Util._
 import scala.xml.Node
 import java.io.File
 import java.io.IOException
+import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.lib.RepositoryState
 import org.eclipse.jgit.dircache.DirCache
@@ -76,7 +77,7 @@ object FileSharing extends ServiceFactory[FileSharingConnection,FileSharingMaste
 
 class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(topic) {
 	if (topic.peer.props("prefs").get("FileSharing.cache").isEmpty) {
-		throw new Exception("No ")
+		throw new Exception("No cache specified in prefs")
 	}
 	val cache: File = new File(new File(topic.peer.storageDirectory, "file-cache"), topic.space+"-"+topic.topic)
 	val repository: Repository = {
@@ -91,6 +92,7 @@ class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(to
 		rep
 	}
 	val index = repository.getIndex
+	var author: PersonIdent = new PersonIdent(topic.peer.props("prefs").get("FileSharing.author").get.value, topic.peer.props("prefs").get("FileSharing.authorEmail").get.value)
 
 	override def receive(msg: DelegatedDHT, node: Node) {
 		for (n <- node.child) n match {
@@ -137,13 +139,13 @@ class FileSharingConnection(topic: TopicConnection) extends ServiceConnection(to
 
 	// services
 	/**
-	 * Add a file after it's been closed (i.e. it already exists, etc.)
+	 * Add a file to the Git index after it's been closed (i.e. it already exists, etc.)
 	 */
 	def add(file: File) {
 		index.add(cache, file)
 	}
 	def commit {
-		
+		Util.commit("Xus commit", author, author, repository)
 	}
 	def push {
 	}
