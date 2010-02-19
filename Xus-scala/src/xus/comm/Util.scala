@@ -56,6 +56,8 @@ import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.lib.RefUpdate
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.lib.Tree
+import org.eclipse.jgit.dircache.DirCache
+import org.eclipse.jgit.dircache.DirCacheEntry
 
 object Xus {
 	def shutdown {
@@ -82,7 +84,7 @@ object Util {
 	}
 	val xusVocabulary = new Vocabulary {
 		JavaConversions.asSet(elements.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.map(msg => QName.valueOf(msg.nodeName))
-		JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.toSeq.flatMap(_.attributes).removeDuplicates.sortWith((a,b) => a < b).map(QName.valueOf(_))
+		JavaConversions.asSet(attributes.asInstanceOf[java.util.Set[QName]]) ++ Protocol.messageMap.values.toSeq.flatMap(_.attributes).distinct.sortWith((a,b) => a < b).map(QName.valueOf(_))
 	}
 
 //	implicit def file2RichFile(file: File): {def deleteAll} = new {
@@ -326,36 +328,33 @@ object Util {
 		else children foreach { toXML(_, pscope, sb) }
 	}
 	
-	def pathsDo(dir: File)(block: (File) => Any) {
+	def pathsDo(dir: File, filter: (File) => Boolean)(block: (File) => Any) {
 		for (file <- dir.listFiles) {
-			block(file)
-			if (file.isDirectory) {
-				pathsDo(file)(block)
+			if (filter(file)) {
+				if (file.isDirectory) {
+					pathsDo(file, filter)(block)
+				} else {
+					println("FILE: "+file.getName)
+					block(file)
+				}
 			}
 		}
 	}
 
 	def commit(commitMsg: String, author: PersonIdent, committer: PersonIdent, repo: Repository) {
 		// prepare the tree
-		var root = repo.mapTree(Constants.HEAD)
-		var index = repo.getIndex()
-		var repoPath = repo.getDirectory
+		var repoPath = repo.getDirectory.getParentFile
+		var index = repo.getIndex
 
-		if (root == null) root = new Tree(repo)
-		pathsDo(repoPath) {f =>
-			var relativePath = chopPrefix(repoPath, f)
-			var entry = root.findBlobMember(relativePath)
-	
-			if (entry != null) entry.delete
-			var indexEntry = index.getEntry(relativePath)
-			if (indexEntry == null) indexEntry = index.add(repoPath, f)
-			root.addFile(relativePath)
-			root.findBlobMember(relativePath).setId(indexEntry.getObjectId())
+		pathsDo(repoPath, _.getName != ".git") {f =>
+			index.add(repoPath, f)
 		}
+		var id = index.writeTree
+		index.write
+		val root = repo.mapTree(id)
 		// do the commit
-		writeTreeWithSubtrees(root, repo)
 		var currentHeadId = repo.resolve(Constants.HEAD)
-		var parentIds = if (currentHeadId == null) {
+		var parentIds = if (currentHeadId != null) {
 			Array(currentHeadId)
 		} else {
 			Array[ObjectId]()
@@ -386,19 +385,6 @@ object Util {
 		}
 		"commit: " + firstLine;
 	}
-
-	def writeTreeWithSubtrees(tree: Tree, repo: Repository) {
-		for (treeEntry <- tree.members()) {
-			if (treeEntry.isModified()) {
-				if (treeEntry.isInstanceOf[Tree]) writeTreeWithSubtrees(treeEntry.asInstanceOf[Tree], repo)
-				else {
-					// error -- only trees should be modified
-				}
-			}
-		}
-		var writer = new ObjectWriter(repo)
-		tree.setId(writer.writeTree(tree))
-	}
 }
 
 class OpenByteArrayInputStream(bytes: Array[Byte], offset: Int, len: Int) extends ByteArrayInputStream(bytes, offset, len) {
@@ -411,4 +397,30 @@ abstract class PropertyActor extends DaemonActor {
 }
 object PropertyActor {
 	def current = self.asInstanceOf[PropertyActor]
+}
+object CommitTest {
+	import Util._
+	import org.eclipse.jgit.lib.PersonIdent
+	import org.eclipse.jgit.lib.Repository
+	import org.eclipse.jgit.lib.RepositoryState
+	import org.eclipse.jgit.dircache.DirCache
+
+	val cache: File = new File("/tmp/xus")
+	val repository: Repository = {
+		val rep = new Repository(cache / ".git")
+
+		if (!cache.exists) {
+			rep.create()
+		}
+		if (rep.getRepositoryState != RepositoryState.SAFE) {
+			throw new IOException("Repository state is not safe: "+rep.getRepositoryState)
+		}
+		rep
+	}
+	val index = repository.getIndex
+	var author: PersonIdent = new PersonIdent("Bubba", "gump@shrimp.com")
+
+	def main(args: Array[String]) {
+		commit("Test commit", author, author, repository)
+	}
 }
