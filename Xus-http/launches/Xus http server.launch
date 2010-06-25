@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.ui.externaltools.ProgramLaunchConfigurationType">
+<stringAttribute key="org.eclipse.ui.externaltools.ATTR_LOCATION" value="${env_var:HOME}/bin/delegated"/>
+<stringAttribute key="org.eclipse.ui.externaltools.ATTR_TOOL_ARGUMENTS" value="-f -P8080 ADMIN=a@b.c &quot;MOUNT=/* /home/bill/work2/Xus/Xus-php/war/*&quot;"/>
+</launchConfiguration>

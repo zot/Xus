@@ -1,0 +1,180 @@
+* Auth levels for accts: Potentate, Poobah, Prole
+
+Gand Poobahs may create new topic spaces
+Each topic space has one or more Poobahs
+Proles can't change anything, they can only send messages.
+
+Gand Poobahs may create accounts, create and destroy topic spaces, and assign Poobahs
+
+Poohbas may destroy their topic space, and assign other Poobahs for their space
+
+* Security is done using SHA-1 as follows:
+
+	* Accounts have an id (40 byte) and password
+	  Password is only exchanged during account creation
+	  Verification is done using the message signature technique below
+	  Connect response is signed by server using connecter's id and password
+
+	* Message Signature
+	  add X-Password: <id> <password> to headers
+	  take date header and X-headers, except for X-Signature, in alphabetical order and prepend them to the body
+	  terminate them with CRNL, compute SHA1, convert to base 64.
+	  DO NOT TRANSMIT the X-Password header (only use it to compute the signature)
+
+Messages:
+
+* CONNECT
+Request:
+X-Command: connect
+X-Account: account id
+X-Signature: signature of message with passphrase
+X-Key: public key
+X-Challenge: <String, preferably a 128 bit random number>
+
+Response:
+OK or 403 (forbidden)
+
+* REQUEST KEY
+Request:
+X-Command: requestKey
+X-Account: account id
+X-Signature: signature of message with passphrase
+X-Challenge: <String, preferably a 128 bit random number>
+
+Response:
+X-Key: public key, 64-bit encoded
+X-Signature: signature of the challenge number
+
+* CREATE ACCOUNT
+X-Command: createAccount
+X-Account: account id (must be a Grand Poobah)
+X-Signature: signature of message with passphrase
+X-NewAccount: new account id
+<body has encrypted password for account, using switchboard's public key>
+
+* DELETE ACCOUNT
+X-Command: deleteAccount
+X-Account: account id (must be a Grand Poobah or account itself)
+X-Signature: signature of message with passphrase
+X-DeadAccount: new account id
+
+* CHANGE PASSWORD
+X-Command: changePassword
+X-Account: account id (must be a Grand Poobah or account itself)
+X-Signature: signature of message with passphrase
+<body has encrypted password for account, using switchboard's public key>
+
+* CREATE TOPIC SPACE
+X-Command: createTopicSpace
+X-Account: account id (must be a Grand Poobah)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+
+* DELETE TOPIC SPACE
+X-Command: deleteTopicSpace
+X-Account: account id (must be a Grand Poobah)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+
+* ADD POOBAH
+X-Command: addPoobah
+X-Account: account id (must be a Grand Poobah or a current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Poobah: account id
+
+* REMOVE POOBAH
+X-Command: removePoobah
+X-Account: account id (must be a Grand Poobah or a current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Poobah: account id
+
+* ADD TOPIC
+X-Command: addTopic
+X-Account: account id (must be a Grand Poobah or a Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+
+* ADD NOVICE
+X-Command: addNovice
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+X-Novice: account id
+
+* REMOVE NOVICE
+X-Command: removeNovice
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+X-Novice: account id
+
+* MULTICAST
+X-Command: multicast
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+<content is message>
+
+* UNICAST
+X-Command: unicast
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+<content is message>
+
+* ANYCAST
+X-Command: anycast
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+X-TopicSpace: name
+X-Topic: name
+<content is message>
+
+* FETCH
+X-Command: anycast
+X-Account: account id (must be a Grand Poobah or current Poobah of this space)
+X-Signature: signature of message with passphrase
+
+Reponse is one or more packets (if more than one, it is a multipart MIME msg)
+
+RESPONSE PACKETS:
+
+* MULTICAST RESPONSE
+X-Response: multicast
+X-From: account id
+X-Topic-Space: name
+X-Topic: name
+<content is message>
+
+* UNICAST RESPONSE
+X-Response: unicast
+X-From: account id
+X-Topic-Space: name
+X-Topic: name
+<content is message>
+
+* ANYCAST RESPONSE
+X-Response: anycast
+X-From: account id
+X-Topic-Space: name
+X-Topic: name
+<content is message>
+
+* JOINED RESPONSE
+X-Response: joined
+X-Account: account id
+X-Topic-Space: name
+X-Topic: name
+
+* LEFT RESPONSE
+X-Response: left
+X-Account: account id
+X-Topic-Space: name
+X-Topic: name

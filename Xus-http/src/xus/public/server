@@ -1,0 +1,3 @@
+#!/bin/sh
+
+exec delegated ADMIN=a@b -f -P8080 MOUNT="/* cgi:./*"

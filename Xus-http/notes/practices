@@ -1,0 +1,3 @@
+emulating a semaphore with shmop (for PHP systems that don't have sysvsem)
+
+locking: spin-lock, opening a piece of shared memory with "n" mode.  Delete it to release the lock.
