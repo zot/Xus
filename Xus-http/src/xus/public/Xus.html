@@ -1,10 +1,80 @@
 <html>
 	<head>
-		<title>Xus</title>
-		<script language='javascript' src='xus.Peer.nocache.js'></script>
+		<title>Xus</title><script language='javascript' src='xus.Peer.nocache.js'></script>
+		<style>
+			.root {
+				width: 100%;
+				height: 100%;
+				position: absolute;
+			}
+			.main {
+				left: 128px;
+				right: 0;
+				height: 100%;
+				position: absolute !important;
+			}
+			.com {
+				width: 100%;
+				height: 100%;
+			}
+			.whiteboard {
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+				position: absolute;
+			}
+			.chat {
+				width: 100%;
+				height: 100%;
+				overflow: auto;
+				position: absolute;
+			}
+			.operations {
+				position: absolute;
+				width: 128px;
+				height: 100%;
+			}
+			.chat, .whiteboard, .operations {
+				outline: solid black 2px;
+			}
+			.hidden {
+				overflow: hidden !important;
+				width: 0 !important;
+				height: 0 !important;
+				visibility: hidden !important;
+			}
+		</style>
 	</head>
-	<body>
-		Test
-		<span id="msg"></span>
+	<body style="top: 0; left: 0; bottom: 0; right: 0; margin: 0; position: absolute; border: none; padding: 0; overflow: hidden">
+		<div id="loading" style="position: absolute">LOADING...</div>
+		<div id="root" class="root hidden">
+			<div id="whiteboard" class="whiteboard">Whiteboard</div>
+			<div id="chat" class="chat">
+				<table rules="all" style="width: 100%; height: 100%">
+					<tr style="vertical-align:top; border: black solid 1px">
+						<td>
+							<div id="output" style="height: 100%; overflow: auto">
+								Chat output
+							</div>
+						</td>
+					</tr>
+					<tr style="height: 1em; border: black solid 1px"><td><input id="input" type="text" style="width: 100%"></td></tr>
+				</table>
+			</div>
+			<div id="operations" class="operations">operations
+				<br><a id="listAccounts" href="javascript:void(0)">List Accounts</a>
+				<br><a id="createAccount" href="javascript:void(0)">Create Account</a>
+				<br><a></a>
+			</div>
+			<div id="accountForm" class="hidden" style="border: none; margin: 0; position: absolute; width: 100%; height: 100%; display: table">
+				<div style="display: table-cell; vertical-align: middle; text-align: center">
+					<div style="text-align: left; margin: auto; display: inline-block">
+						Name: <input type="text" id="accountName">
+						<br>Password: <input type="text" id="accountPassword">
+						<br><button id="accountOK">OK</button> <button id="accountCancel">Cancel</button>
+					</div>
+				</div>
+			</div>
+		</div>
 	</body>
 </html>
