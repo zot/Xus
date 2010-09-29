@@ -49,6 +49,24 @@ public class Xus2 implements EntryPoint {
 		// Use RootPanel.get() to get the entire body element
 		RootPanel rootPanel = RootPanel.get("setCommand");
 		
+		HorizontalPanel unListenPanel = new HorizontalPanel();
+		
+		unListenPanel.setSize("271px", "29px");
+		
+		Button unlisten = new Button("New button");
+		unlisten.setText("unlisten");
+		unListenPanel.add(unlisten);
+		unlisten.setSize("100%", "27px");
+		
+		final TextBox unlisten_msgId = new TextBox();
+		unlisten_msgId.setVisibleLength(8);
+		unListenPanel.add(unlisten_msgId);
+		
+		final TextBox unlisten_key = new TextBox();
+		unlisten_key.setVisibleLength(8);
+		unlisten_key.setText("test");
+		unListenPanel.add(unlisten_key);
+		
 		
 		
 		HorizontalPanel setPanel = new HorizontalPanel();
@@ -79,6 +97,8 @@ public class Xus2 implements EntryPoint {
 		rootPanel.add(listenPanel);
 		listenPanel.setSize("271px", "29px");
 		
+		rootPanel.add(unListenPanel);
+		
 		Button listen = new Button("New button");
 		listen.setText("listen");
 		listenPanel.add(listen);
@@ -96,10 +116,16 @@ public class Xus2 implements EntryPoint {
 		RootPanel.get("errorLabelContainer").add(errorLabel);
 		
 		listBox = new ListBox();
-		rootPanel.add(listBox, 10, 64);
+		rootPanel.add(listBox, 10, 115);
 		listBox.setSize("241px", "156px");
 		listBox.setVisibleItemCount(5);
 
+		unlisten.addClickHandler(new ClickHandler() {
+			public void onClick(ClickEvent event) {
+				xusSend("/xus2/xus?cmd=unlisten&msgId="+unlisten_msgId.getText()+"&key="+unlisten_key.getText());
+				System.out.println("not listening to " + key.getText());
+			}
+		});
 		listen.addClickHandler(new ClickHandler() {
 			public void onClick(ClickEvent event) {
 				xusSend("/xus2/xus?cmd=listen&msgId="+listen_msgId.getText()+"&key="+listen_key.getText());

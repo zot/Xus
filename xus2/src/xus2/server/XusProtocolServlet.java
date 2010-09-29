@@ -27,7 +27,8 @@ public class XusProtocolServlet extends HttpServlet {
 	
 	enum XusProtocol {
 		set("msgId", "key", "value"),
-		listen("msgId", "key")
+		listen("msgId", "key"),
+		unlisten("msgId", "key")
 		;
 		
 		String[] _args;
@@ -118,6 +119,13 @@ public class XusProtocolServlet extends HttpServlet {
 				l.add(channelId);
 				listeners.put(key, l);
 			}
+			
+			break;
+			
+		case unlisten:
+			key = req.getParameter(params[1]);
+			l = listeners.get(key);
+			if (l!=null) l.remove(channelId);
 			
 			break;
 		default:
