@@ -91,21 +91,35 @@ public class XusProtocolServlet extends HttpServlet {
 		case set:
 			//Entity taskEntity = new Entity(req.getParameter(params[1]), req.getParameter(params[2]));
 		    //datastore.put(taskEntity);
+			String msgId = req.getParameter(params[0]);
+			
 			String key = req.getParameter(params[1]);
 			
 			data.put(key, req.getParameter(params[2]));
-
-			List<String> l = listeners.get(key);
-			if (l != null) {
-				for (String channel : l) {
-					// if (channel != channelId) { // Do we want to -not- send an update to ourselfs?
+			
+			int i = key.length();
+			
+			String nKey = key;
+			
+			do {
+				nKey = nKey.substring(0, i);
+				
+				System.out.println("working on key: " + nKey);
+				
+				List<String> l = listeners.get(nKey);
+				if (l != null) {
+					for (String channel : l) {
+						// if (channel != channelId) { // Do we want to -not- send an update to ourselfs?
 						String appId = channels.get(channel);
 						System.out.println("Server: " +channel + " => " + appId);
 						
-						if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, key + " = " + req.getParameter(params[2])));
-					//}
+						String val = data.get(nKey);
+						if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"', '"+nKey + "', '" + val + "')"));
+						//}
+					}
 				}
-			}
+			} while ((i = nKey.lastIndexOf(".")) > 0) ;
+			
 			
 
 			
@@ -113,7 +127,7 @@ public class XusProtocolServlet extends HttpServlet {
 			break;
 		case listen:
 			key = req.getParameter(params[1]);
-			l = listeners.get(key);
+			List<String> l  = listeners.get(key);
 			if (l==null) l = new ArrayList<String>();
 			if (!l.contains(channelId)) {
 				l.add(channelId);
