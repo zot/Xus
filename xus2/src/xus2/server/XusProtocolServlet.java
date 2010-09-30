@@ -3,6 +3,7 @@ package xus2.server;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -13,18 +14,22 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import org.apache.jsp.ah.datastoreViewerBody_jsp;
+
+import com.google.appengine.api.channel.ChannelFailureException;
 import com.google.appengine.api.channel.ChannelMessage;
 import com.google.appengine.api.channel.ChannelServiceFactory;
 import com.google.appengine.api.datastore.DatastoreService;
 import com.google.appengine.api.datastore.DatastoreServiceFactory;
+import com.google.appengine.api.datastore.Entity;
+import com.google.appengine.api.datastore.EntityNotFoundException;
+import com.google.appengine.api.datastore.Key;
+import com.google.appengine.api.datastore.KeyFactory;
+import com.google.appengine.api.datastore.Query;
 
 @SuppressWarnings("serial")
 public class XusProtocolServlet extends HttpServlet {
 
-	private Map<String, String> data = new HashMap<String, String>();
-	private Map<String, String> channels = new HashMap<String, String>();
-	private Map<String, List<String>> listeners = new HashMap<String, List<String>>();
-	
 	enum XusProtocol {
 		set("msgId", "key", "value"),
 		listen("msgId", "key"),
@@ -41,10 +46,12 @@ public class XusProtocolServlet extends HttpServlet {
 	
 	AtomicInteger _ai = new AtomicInteger();
 	
+	DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
 	
 	
 	@Override
 	protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		
 		XusProtocol cmd = null;
 		try {
 			cmd = XusProtocol.valueOf(req.getParameter("cmd"));
@@ -53,10 +60,10 @@ public class XusProtocolServlet extends HttpServlet {
 			return;
 		}
 		
-		HttpSession session = req.getSession(true);
-		System.out.println("session = " + session);
+		
+		//HttpSession session = req.getSession(true);
+		//System.out.println("session = " + session);
 		 // Get a handle on the datastore itself
-		 DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
 
 		 /*
 		 // Lookup data by known key name
@@ -83,19 +90,23 @@ public class XusProtocolServlet extends HttpServlet {
 			channelId = ChannelServiceFactory.getChannelService().createChannel(appId);
 			resp.setHeader("channelId", channelId);
 			System.out.println("Registering " + channelId + " => " + appId);
-			channels.put(channelId, appId);
+			
+			Entity channelEnt = new Entity(KeyFactory.createKey("channelId", channelId));
+			channelEnt.setProperty("appId", appId);
+			datastore.put(channelEnt);
 		}
 		
 		String params[] = cmd.getArgs();
 		switch (cmd) {
 		case set:
-			//Entity taskEntity = new Entity(req.getParameter(params[1]), req.getParameter(params[2]));
-		    //datastore.put(taskEntity);
 			String msgId = req.getParameter(params[0]);
-			
 			String key = req.getParameter(params[1]);
+			String val = req.getParameter(params[2]);
 			
-			data.put(key, req.getParameter(params[2]));
+			Entity var = new Entity(KeyFactory.createKey("var", key));
+			var.setProperty("value", val);
+			
+			datastore.put(var);
 			
 			int i = key.length();
 			
@@ -106,42 +117,85 @@ public class XusProtocolServlet extends HttpServlet {
 				
 				System.out.println("working on key: " + nKey);
 				
-				List<String> l = listeners.get(nKey);
-				if (l != null) {
-					for (String channel : l) {
-						// if (channel != channelId) { // Do we want to -not- send an update to ourselfs?
-						String appId = channels.get(channel);
-						System.out.println("Server: " +channel + " => " + appId);
+				Key listenerKey = KeyFactory.createKey("listener", nKey);
+				
+				try {
+					Entity listener = datastore.get(listenerKey);
+					
+					List<String> l = (List<String>) listener.getProperty("channels");
+					
+					
+					if (l != null) {
+						System.out.println("holding " + l.size() + " listeners for key '" + nKey + "'");
+						Iterator<String> iter = l.iterator();
 						
-						String val = data.get(nKey);
-						if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"', '"+nKey + "', '" + val + "')"));
-						//}
-					}
+						while (iter.hasNext()) {
+							String channel = iter.next();
+							String appId;
+							try {
+								appId = (String) datastore.get(KeyFactory.createKey("channelId", channel)).getProperty("appId");
+								//System.out.println("Server: " +channel + " => " + appId);
+								String dVal = null;
+								try {
+									dVal = (String) datastore.get(KeyFactory.createKey("var", nKey)).getProperty("value");
+								} catch (EntityNotFoundException e) {}
+								
+								try {
+									if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"', '"+nKey + "', '" + dVal + "')"));
+								} catch (ChannelFailureException e) {
+									System.out.println("listener's channel is dead, removing. ");
+									iter.remove();
+									listener.setProperty("channels", l);
+									datastore.put(listener);
+								}
+							
+							} catch (EntityNotFoundException e) {
+								e.printStackTrace();
+							}
+						}
+					}					
 				}
+				catch (EntityNotFoundException e) {
+				}
+				
 			} while ((i = nKey.lastIndexOf(".")) > 0) ;
 			
-			
-
-			
-			
 			break;
-		case listen:
+		case listen: {
 			key = req.getParameter(params[1]);
-			List<String> l  = listeners.get(key);
-			if (l==null) l = new ArrayList<String>();
-			if (!l.contains(channelId)) {
-				l.add(channelId);
-				listeners.put(key, l);
+			
+			Key listenerKey = KeyFactory.createKey("listener", key);
+			
+			Entity dl = null;
+			List<String> channels = null;
+			try {
+				dl = datastore.get(listenerKey);
+				channels =  (List<String>) dl.getProperty("channels");
+				if (channels == null) channels = new ArrayList<String>(); 
+			}catch (EntityNotFoundException e) {
+				dl = new Entity(listenerKey);
+				channels = new ArrayList<String>();
 			}
 			
-			break;
-			
-		case unlisten:
+			if (!channels.contains(channelId)) {
+				channels .add(channelId);
+				dl.setProperty("channels", channels);
+				datastore.put(dl);
+			}
+		} break;
+		case unlisten: {
 			key = req.getParameter(params[1]);
-			l = listeners.get(key);
-			if (l!=null) l.remove(channelId);
 			
-			break;
+			Key listenerKey = KeyFactory.createKey("listener", key);
+			try {
+				Entity listener = datastore.get(listenerKey);
+				List<String> channels = (List<String>) listener.getProperty("channels");
+				channels.remove(channelId);
+				listener.setProperty("channels", channels);
+				datastore.put(listener);
+			} catch (EntityNotFoundException e) {
+			}
+		} break;
 		default:
 			break;
 		}

@@ -123,7 +123,7 @@ public class Xus2 implements EntryPoint {
 		unlisten.addClickHandler(new ClickHandler() {
 			public void onClick(ClickEvent event) {
 				xusSend("/xus2/xus?cmd=unlisten&msgId="+unlisten_msgId.getText()+"&key="+unlisten_key.getText());
-				System.out.println("not listening to " + key.getText());
+				System.out.println("not listening to " + unlisten_key.getText());
 			}
 		});
 		listen.addClickHandler(new ClickHandler() {
