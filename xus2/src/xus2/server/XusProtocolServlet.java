@@ -2,19 +2,14 @@ package xus2.server;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-
-import org.apache.jsp.ah.datastoreViewerBody_jsp;
 
 import com.google.appengine.api.channel.ChannelFailureException;
 import com.google.appengine.api.channel.ChannelMessage;
@@ -26,6 +21,7 @@ import com.google.appengine.api.datastore.EntityNotFoundException;
 import com.google.appengine.api.datastore.Key;
 import com.google.appengine.api.datastore.KeyFactory;
 import com.google.appengine.api.datastore.Query;
+import com.google.appengine.api.datastore.Query.FilterOperator;
 
 @SuppressWarnings("serial")
 public class XusProtocolServlet extends HttpServlet {
@@ -112,6 +108,68 @@ public class XusProtocolServlet extends HttpServlet {
 			
 			String nKey = key;
 			
+			// The same as below, but using queries
+			Query q = new Query("listener");
+			
+			ArrayList<Key> k = new ArrayList<Key>();
+			
+			do {
+				nKey = nKey.substring(0, i); 
+				k.add(KeyFactory.createKey("listener",nKey));
+			} while ((i = nKey.lastIndexOf("."))>0);
+			
+			q.addFilter("__key__", FilterOperator.IN, k);
+			
+			Iterator<Entity> iter = datastore.prepare(q).asIterable().iterator();
+			
+			while (iter.hasNext()) {
+				Entity listenerEnt = iter.next();
+				String curKey = listenerEnt.getKey().getName();
+				
+				List<String> listeners = (List<String>) listenerEnt.getProperty("channels");
+				
+				if (listeners != null) {
+					System.out.println("holding " + listeners.size() + " listeners for key '" + curKey + "'");
+					
+					Iterator<String> channelIter = listeners.iterator();
+					
+					while (channelIter.hasNext()) {
+						String channel = channelIter.next();
+						String appId;
+						try {
+							appId = (String) datastore.get(KeyFactory.createKey("channelId", channel)).getProperty("appId");
+							//
+							String dVal = null;
+							try {
+								dVal = (String) datastore.get(KeyFactory.createKey("var", curKey)).getProperty("value");
+							} catch (EntityNotFoundException e) {}
+							
+							try {
+								if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"', '"+curKey + "', '" + dVal + "')"));
+							} catch (ChannelFailureException e) {
+								System.out.println("listener's channel is dead, removing. ");
+								channelIter.remove();
+								
+								if (listeners.isEmpty()) {
+									System.out.println("no more listeners, removing..");
+									datastore.delete(listenerEnt.getKey());
+								} else {
+									listenerEnt.setProperty("channels", listeners);
+									datastore.put(listenerEnt);
+								}
+							}
+						
+						} catch (EntityNotFoundException e) {
+							e.printStackTrace();
+						}
+					}
+					
+				} else {
+					System.err.println("Got a null channel for listener on '" + nKey +"'. Wierd.");
+					continue;
+				}
+			}
+			/*// same as above, without queries 
 			do {
 				nKey = nKey.substring(0, i);
 				
@@ -159,7 +217,7 @@ public class XusProtocolServlet extends HttpServlet {
 				}
 				
 			} while ((i = nKey.lastIndexOf(".")) > 0) ;
-			
+			*/
 			break;
 		case listen: {
 			key = req.getParameter(params[1]);
