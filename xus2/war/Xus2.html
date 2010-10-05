@@ -46,18 +46,50 @@
       </div>
     </noscript>
 
-    <h1>XUS2 test Project</h1>
+    <h1>XUS2 test Project v2</h1>
 
-    <table align="center">
+
+
+    <table align="left">
       <tr>
         <td colspan="2" style="font-weight:bold;">Choose a command:</td>        
       </tr>
-      <tr>
-        <td id="setCommand"></td>
+      <tr valign="top">
+      	<td>
+      	<table align="center">
+      		<tr >
+        		<td><button name="listen" type="button" id="listen">Listen</button></td>
+        		<td><input type="input" id="listenMsgId" size="5" value="msgId"></input></td>
+        		<td><input type="input" id="listenKey" size="5" value="key"></input></td>
+      		</tr>
+      		<tr>
+        		<td><button name="unlisten" type="button" id="unlisten">Unlisten</button></td>
+        		<td><input type="input" id="unlistenMsgId" size="5" value="msgId"></input></td>
+        		<td><input type="input" id="unlistenKey" size="5" value="key"></input></td>
+      		</tr>
+      		<tr>
+        		<td><button name="set" type="button" id="set">Set</button></td>
+        		<td><input type="input" id="setMsgId" size="5" value="msgId"></input></td>
+        		<td><input type="input" id="setKey1" size="5" ></input></td>
+        		<td><input type="input" id="setVal1" size="5" ></input></td>
+        		<td><input type="input" id="setKey2" size="5" ></input></td>
+        		<td><input type="input" id="setVal2" size="5" ></input></td>
+        		<td><input type="input" id="setKey3" size="5" ></input></td>
+        		<td><input type="input" id="setVal3" size="5" ></input></td>
+      		</tr>
+      	</table>
+      	</td>
+		<td>
+	      	<button name="clear" type="button" id="clear">clear</button><ul><div id="output"></div></ul></td>
+      	</td>
       </tr>
+    </table>
+    
+    <table align="center"> 
       <tr>
         <td colspan="2" style="color:red;" id="errorLabelContainer"></td>
       </tr>
     </table>
+
   </body>
 </html>
