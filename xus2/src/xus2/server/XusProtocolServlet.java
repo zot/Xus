@@ -11,7 +11,6 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import xus2.shared.KeyValue;
 import xus2.shared.MalformedXusCommandException;
 import xus2.shared.XusCommand;
 import xus2.shared.XusListen;
@@ -65,82 +64,95 @@ public class XusProtocolServlet extends HttpServlet {
 			if (cmd instanceof XusSet) {
 				XusSet set = (XusSet) cmd;
 				
-				String msgId = ((XusSet) cmd).getMsgId();
+				boolean repliedToSender = false;
 				
-				List<KeyValue<String, String>> keysValues = set.getKeyValues();
+				String msgId = set.getMsgId();
+				String key = set.getKey();
+				String val = set.getValue();
 				
-				for (KeyValue<String, String> keyValue : keysValues) {
+				Entity var = new Entity(KeyFactory.createKey("var", key));
+				var.setProperty("value", val);
+				
+				datastore.put(var);
+				
+				int i = key.length();
+				
+				String nKey = key;
+				
+				// The same as below, but using queries
+				Query q = new Query("listener");
+				
+				ArrayList<Key> k = new ArrayList<Key>();
+				
+				do {
+					nKey = nKey.substring(0, i); 
+					k.add(KeyFactory.createKey("listener",nKey));
+				} while ((i = nKey.lastIndexOf("."))>0);
+				
+				q.addFilter("__key__", FilterOperator.IN, k);
+				
+				Iterator<Entity> iter = datastore.prepare(q).asIterable().iterator();
+				
+				while (iter.hasNext()) {
+					Entity listenerEnt = iter.next();
+					String curKey = listenerEnt.getKey().getName();
 					
-					String key = keyValue.getKey();
-					String val = keyValue.getValue();
+					List<String> listeners = (List<String>) listenerEnt.getProperty("channels");
 					
-					Entity var = new Entity(KeyFactory.createKey("var", key));
-					
-					datastore.put(var);
-					
-					int i = key.length();
-					
-					String nKey = key;
-					
-					// The same as below, but using queries
-					Query q = new Query("listener");
-					
-					ArrayList<Key> k = new ArrayList<Key>();
-					
-					do {
-						nKey = nKey.substring(0, i); 
-						k.add(KeyFactory.createKey("listener",nKey));
-					} while ((i = nKey.lastIndexOf("."))>0);
-					
-					q.addFilter("__key__", FilterOperator.IN, k);
-					
-					Iterator<Entity> iter = datastore.prepare(q).asIterable().iterator();
-					
-					while (iter.hasNext()) {
-						Entity listenerEnt = iter.next();
-						String curKey = listenerEnt.getKey().getName();
+					if (listeners != null) {
+						System.out.println("holding " + listeners.size() + " listeners for key '" + curKey + "'");
 						
-						List<String> listeners = (List<String>) listenerEnt.getProperty("channels");
+						Iterator<String> channelIter = listeners.iterator();
 						
-						if (listeners != null) {
-							System.out.println("holding " + listeners.size() + " listeners for key '" + curKey + "'");
+						while (channelIter.hasNext()) {
+							String channel = channelIter.next();
 							
-							Iterator<String> channelIter = listeners.iterator();
-							
-							while (channelIter.hasNext()) {
-								String channel = channelIter.next();
-								String appId;
-								try {
-									appId = (String) datastore.get(KeyFactory.createKey("channelId", channel)).getProperty("appId");
-									
-									try {
-										if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"','"+key+"','"+val+"')"));
-									} catch (ChannelFailureException e) {
-										System.out.println("listener's channel is dead, removing. ");
-										channelIter.remove();
-										
-										if (listeners.isEmpty()) {
-											System.out.println("no more listeners, removing..");
-											datastore.delete(listenerEnt.getKey());
-										} else {
-											listenerEnt.setProperty("channels", listeners);
-											datastore.put(listenerEnt);
-										}
-									}
-									
-								} catch (EntityNotFoundException e) {
-									e.printStackTrace();
-								}
+							if (channel.equals(channelId)) {
+								repliedToSender = true;
 							}
 							
-						} else {
-							System.err.println("Got a null channel for listener on '" + nKey +"'. Wierd.");
-							continue;
+							
+							String appId;
+							try {
+								appId = (String) datastore.get(KeyFactory.createKey("channelId", channel)).getProperty("appId");
+								
+								try {
+									if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"','"+key+"','"+val+"')"));
+								} catch (ChannelFailureException e) {
+									System.out.println("listener's channel is dead, removing. ");
+									channelIter.remove();
+									
+									if (listeners.isEmpty()) {
+										System.out.println("no more listeners, removing..");
+										datastore.delete(listenerEnt.getKey());
+									} else {
+										listenerEnt.setProperty("channels", listeners);
+										datastore.put(listenerEnt);
+									}
+								}
+								
+							} catch (EntityNotFoundException e) {
+								e.printStackTrace();
+							}
 						}
 						
-						var.setProperty("value", val);
+					} else {
+						System.err.println("Got a null channel for listener on '" + nKey +"'. Wierd.");
+						continue;
 					}
 				}
+					
+				if (!repliedToSender) {
+					try {
+						Entity channel = datastore.get(KeyFactory.createKey("channelId", channelId));
+						String appId = (String) channel.getProperty("appId");
+						if (appId != null) ChannelServiceFactory.getChannelService().sendMessage(new ChannelMessage(appId, "set('"+msgId+"','"+key+"','"+val+"')"));							
+					} catch (EntityNotFoundException e) {
+						e.printStackTrace();
+					}
+				}
+			
+			
 			} else if (cmd instanceof XusListen) {
 				XusListen listen = (XusListen) cmd;
 				

@@ -1,17 +1,20 @@
 package xus2.shared;
 
-import java.util.List;
 
 public class XusListen extends XusCommand {
 
 	private String msgId;
 	private String key;
 
-	public XusListen(List<String> args) {
-		this.msgId = args.get(0);
-		this.key = args.get(1);
+	public XusListen(String... args) {
+		this.msgId = String.valueOf(args[0]);
+		this.key = String.valueOf(args[1]);
 	}
 	
-	public String getKey() {return key;};
+	public String getKey() {return key;}
+
+	public String sendString() {
+		return "/xus2/xus?cmd=listen('"+msgId+"','"+key+"')";
+	};
 
 }

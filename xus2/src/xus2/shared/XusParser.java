@@ -39,25 +39,25 @@ public class XusParser {
 		List<String> args = parseArgs(argString);
 		switch (cmd) {
 		case set:
-			if (args.size()<3) {
-				throw new MalformedXusCommandException("cant parse " + command + " not enough args for protocol");
+			if (args.size()!=3) {
+				throw new MalformedXusCommandException("cant parse " + command + " must have three args for protocol");
 			}
 			
-			return new XusSet(args);
+			return new XusSet(args.get(0), args.get(1), args.get(2));
 			
 		case listen:
-			if (args.size()>3) {
-				throw new MalformedXusCommandException("cant parse " + command + " too many args for protocol");
+			if (args.size()!=2) {
+				throw new MalformedXusCommandException("cant parse " + command + " must have two args for protocol");
 			}
 			
-			return new XusListen(args);
+			return new XusListen(args.get(0), args.get(1));
 			
 		case unlisten:
-			if (args.size()>2) {
-				throw new MalformedXusCommandException("cant parse " + command + " too many args for protocol");
+			if (args.size()!=2) {
+				throw new MalformedXusCommandException("cant parse " + command + " must have two args for protocol");
 			}
 			
-			return new XusUnlisten(args);
+			return new XusUnlisten(args.get(0), args.get(1));
 
 		default:
 			break;

@@ -1,5 +1,18 @@
 package xus2.client;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import xus2.shared.Effect;
+import xus2.shared.MalformedXusCommandException;
+import xus2.shared.XusCommand;
+import xus2.shared.XusListen;
+import xus2.shared.XusParser;
+import xus2.shared.XusSet;
+import xus2.shared.XusUnlisten;
+
 import com.google.gwt.http.client.Request;
 import com.google.gwt.http.client.RequestBuilder;
 import com.google.gwt.http.client.RequestCallback;
@@ -12,6 +25,7 @@ public class XusClient  {
 	private String channelId = "none";
 	private boolean channelStarted = false;
 
+	int msgIdAi = 0;
 	
 	public XusClient () {
 		
@@ -21,29 +35,83 @@ public class XusClient  {
 
 	public void addIncomingHandler(XusIncommingHandler xusIncommingHandler) {
 		handler = xusIncommingHandler;
-		
 	}
 	
-	protected void xusListen(String msgId, String key) {
-		xusSend("/xus2/xus?cmd=listen('"+msgId+"','"+key+"')");
-		
-	}
-
-	protected void xusSet(String msgId, String... vals ) {
-
-		StringBuilder b = new StringBuilder().append("/xus2/xus?cmd=set('").append(msgId).append("',");
-		
-		for (String val: vals) {
-			if (val != null && val.length()!=0) b.append("'").append(val).append("',");
+	Map<String, Effect<XusSet>> setSuccessListeners = new HashMap<String, Effect<XusSet>>();
+	Map<String, Effect<XusSet>> setFailureListeners = new HashMap<String, Effect<XusSet>>();
+	Map<String, Map<Integer, Effect<XusSet>>> listenHandlers= new HashMap<String, Map<Integer,Effect<XusSet>>>();
+	
+	private void onRecievedMessage(XusCommand xusCommand) {
+		if (xusCommand instanceof XusSet) {
+			
+			// if we received set message, so we naturally succeeded, 
+			// remove the failure for this msgId
+			XusSet set = (XusSet) xusCommand;
+			Effect<XusSet> sl = setSuccessListeners.get(set.getMsgId());
+			setFailureListeners.remove(set.getMsgId());
+			if (sl != null) {
+				setSuccessListeners.remove(set.getMsgId());
+				sl.e(set);
+			}
+			
+			String nKey = set.getKey();
+			int i = nKey.length();
+			boolean handled = false;
+			do {
+				nKey = nKey.substring(0, i); 
+				
+				Map<Integer, Effect<XusSet>> ll = listenHandlers.get(nKey);
+				
+				if (ll != null) {
+					
+					for ( Effect effect: ll.values()) {
+						effect.e(set);
+					}
+					handled = true;
+				}				
+			} while (!handled && (i = nKey.lastIndexOf("."))>0);
+			
 		}
 		
-		b.delete(b.length()-1, b.length()).append(")");;
-		
-		xusSend(b.toString());
+		if (handler != null) handler.recievedMessage(xusCommand);
+	}
+	
+	protected void xusListen(String key, int unique, Effect<XusSet> handler) {
+		String msgId = channelId+(msgIdAi++);
+		XusListen listen = new XusListen(msgId, key);
+		if (handler!=null) {
+			Map<Integer, Effect<XusSet>> l = listenHandlers.get(key);
+			
+			if (l == null) {
+				l = new HashMap<Integer, Effect<XusSet>>(4);
+				l.put(unique, handler);
+			}
+			else {
+				l.put(unique, handler);
+			}
+			
+			listenHandlers.put(key, l);
+		}
+		else {
+			
+		}
+		xusSend(listen .sendString());
 	}
 
-	protected void xusUnlisten(String msgId, String key) {
-		xusSend("/xus2/xus?cmd=unlisten('"+msgId+"','"+key+"')");
+	protected void xusSet(String key, Object val, Effect<XusSet> success, Effect<XusSet> failure) {
+		String msgId = channelId+(msgIdAi++);
+		XusSet set = new XusSet(msgId,key, String.valueOf(val));
+		if (success!=null)setSuccessListeners.put(msgId, success);
+		if (failure!=null)setFailureListeners.put(msgId, failure);
+		xusSend(set.sendString());
+	}
+	
+
+	protected void xusUnlisten(String key) {
+		String msgId = channelId+(msgIdAi++);
+		XusUnlisten unlisten = new XusUnlisten(msgId, key);
+		listenHandlers.remove(key);
+		xusSend(unlisten .sendString());
 	}
 
 	public void xusSend(String url) {
@@ -69,10 +137,13 @@ public class XusClient  {
 							
 							@Override
 							public void onMessage(String message) {
-								if (handler!=null)handler.recievedMessage(message);
+								//if (handler!=null)handler.recievedMessage(message);
+								try {
+									onRecievedMessage(XusParser.parse(message));
+								} catch (MalformedXusCommandException e) {
+									e.printStackTrace();
+								}
 							}
-
-							
 						});
 						
 									
