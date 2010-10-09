@@ -26,7 +26,7 @@ public class XusParser {
 		int i = command.indexOf('(');
 		String argString = command.substring(i+1, command.length()-1).trim();
 		
-		System.out.println("Working on " + command + " -- " + command.substring(0, i).trim() + " --  " + argString);
+		//System.out.println("Working on " + command + " -- " + command.substring(0, i).trim() + " --  " + argString);
 		
 		
 		XusProtocol cmd = null;

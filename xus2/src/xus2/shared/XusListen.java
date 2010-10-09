@@ -12,9 +12,11 @@ public class XusListen extends XusCommand {
 	}
 	
 	public String getKey() {return key;}
+	public String getMsgId() { return msgId; };
 
 	public String sendString() {
 		return "/xus2/xus?cmd=listen('"+msgId+"','"+key+"')";
-	};
+	}
+
 
 }

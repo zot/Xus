@@ -39,7 +39,12 @@ public class XusClient  {
 	
 	Map<String, Effect<XusSet>> setSuccessListeners = new HashMap<String, Effect<XusSet>>();
 	Map<String, Effect<XusSet>> setFailureListeners = new HashMap<String, Effect<XusSet>>();
-	Map<String, Map<Integer, Effect<XusSet>>> listenHandlers= new HashMap<String, Map<Integer,Effect<XusSet>>>();
+	
+	// A local map, of keys to there listeners. a key can contain more then one listener 
+	Map<String, List<Effect<XusSet>>> listenHandlers= new HashMap<String, List<Effect<XusSet>>>();
+	
+	// an empty listener
+	private static final Effect<XusSet> noHandler = new Effect<XusSet>() {@Override public void e(XusSet t) {}};
 	
 	private void onRecievedMessage(XusCommand xusCommand) {
 		if (xusCommand instanceof XusSet) {
@@ -56,46 +61,100 @@ public class XusClient  {
 			
 			String nKey = set.getKey();
 			int i = nKey.length();
-			boolean handled = false;
+			
 			do {
 				nKey = nKey.substring(0, i); 
 				
-				Map<Integer, Effect<XusSet>> ll = listenHandlers.get(nKey);
+				 List<Effect<XusSet>> ll = listenHandlers.get(nKey);
 				
 				if (ll != null) {
 					
-					for ( Effect effect: ll.values()) {
+					for ( Effect effect: ll) {
 						effect.e(set);
 					}
-					handled = true;
 				}				
-			} while (!handled && (i = nKey.lastIndexOf("."))>0);
+			} while ((i = nKey.lastIndexOf("."))>0);
 			
 		}
 		
 		if (handler != null) handler.recievedMessage(xusCommand);
 	}
 	
-	protected void xusListen(String key, int unique, Effect<XusSet> handler) {
-		String msgId = channelId+(msgIdAi++);
-		XusListen listen = new XusListen(msgId, key);
-		if (handler!=null) {
-			Map<Integer, Effect<XusSet>> l = listenHandlers.get(key);
-			
-			if (l == null) {
-				l = new HashMap<Integer, Effect<XusSet>>(4);
-				l.put(unique, handler);
-			}
-			else {
-				l.put(unique, handler);
-			}
-			
-			listenHandlers.put(key, l);
+	protected Effect<XusSet> xusListen(String key) {
+		return xusListen(key, null);
+	}
+	
+	protected Effect<XusSet> xusListen(String key, Effect<XusSet> handler) {
+		
+		boolean send = false;
+		
+		if (handler == null) handler = noHandler;
+		
+		// check if we already have a listener on this key
+		List<Effect<XusSet>> l = listenHandlers.get(key);
+		
+		// if we dont have we will have to register the listener with the server
+		if (l==null) {
+			l = new ArrayList<Effect<XusSet>>();
+			send = true;
 		}
-		else {
-			
+		
+		// add the handler to the list
+		l.add(handler);
+		
+		// register the handler list with the map for that key
+		listenHandlers.put(key, l);
+		
+		// we do need to send, so generate a xusListen and send it
+		if (send) {			
+			String msgId = channelId+(msgIdAi++);
+			xusSend(new XusListen(msgId, key).sendString());
 		}
-		xusSend(listen .sendString());
+		
+		return handler;
+	}
+
+	
+	protected void xusUnlisten(String key) {
+		xusUnlisten(key, null);
+	}
+	
+	
+	/*
+	 * if handler is null - remove all local, send remove key to server
+	 * 
+	 * remove handler from listenHandlers list - if after removal, we have no listeners, send remove key to server
+	 */
+	protected void xusUnlisten(String key, Effect<XusSet> handler) {
+		
+		boolean send = false;
+		
+		// if no handler was supplied, remove the entire list of listeners for this key
+		if (handler == null) {
+			listenHandlers.remove(key);
+			send = true;
+		} else {
+		
+			// a handler was supplied, so find it in the listener list for this key
+			List<Effect<XusSet>> l = listenHandlers.get(key);
+			
+			// if there's no listener, nothing to do really..
+			if (l != null) {
+				
+				// There is a listener, so remove this handler from the listener list
+				l.remove(handler);
+				
+				// if the size is 0, remove it from the server
+				send = l.size() == 0;
+			}			
+		}
+		
+		if (send) {
+			// send an unlisten to the server
+			String msgId = channelId+(msgIdAi++);
+			xusSend(new XusUnlisten(msgId, key).sendString());
+		}
+		
 	}
 
 	protected void xusSet(String key, Object val, Effect<XusSet> success, Effect<XusSet> failure) {
@@ -106,13 +165,6 @@ public class XusClient  {
 		xusSend(set.sendString());
 	}
 	
-
-	protected void xusUnlisten(String key) {
-		String msgId = channelId+(msgIdAi++);
-		XusUnlisten unlisten = new XusUnlisten(msgId, key);
-		listenHandlers.remove(key);
-		xusSend(unlisten .sendString());
-	}
 
 	public void xusSend(String url) {
 		RequestBuilder req = new RequestBuilder(RequestBuilder.GET, url);

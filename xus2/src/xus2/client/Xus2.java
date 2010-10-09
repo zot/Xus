@@ -1,6 +1,8 @@
 package xus2.client;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import xus2.shared.Effect;
 import xus2.shared.XusSet;
@@ -33,8 +35,6 @@ public class Xus2 implements EntryPoint {
 	 */
 	private final GreetingServiceAsync greetingService = GWT.create(GreetingService.class);
 	
-	int listener = 1;
-	
 	/**
 	 * This is the entry point method.
 	 */
@@ -48,7 +48,8 @@ public class Xus2 implements EntryPoint {
 		//final DivElement output = DOM.getElementById("output").cast();
 		
 		final DivElement output = DOM.getElementById("Canvas").cast();
-		final Button  rectBtn    = Button.wrap(DOM.getElementById("rect"));
+		final Button  listenRectBtn    = Button.wrap(DOM.getElementById("listenRect"));
+		final Button  unlistenRectBtn    = Button.wrap(DOM.getElementById("unlistenRect"));
 
 		final Button  clearBtn    = Button.wrap(DOM.getElementById("clear"));
 		
@@ -67,14 +68,14 @@ public class Xus2 implements EntryPoint {
 		
 		final HashMap<String, Integer> rect = new HashMap<String, Integer>(4);
 		
+		final List<Effect<XusSet>> l = new ArrayList<Effect<XusSet>>();
 		
-		rectBtn.addClickHandler(new ClickHandler() {
+		listenRectBtn.addClickHandler(new ClickHandler() {
 			
 			@Override
 			public void onClick(ClickEvent event) {
-				// TODO Auto-generated method stub
 				
-				xusClient.xusListen("rect", 0, new Effect<XusSet>() {
+				Effect<XusSet> e = xusClient.xusListen("rect", new Effect<XusSet>() {
 					
 					@Override
 					public void e(XusSet t) {
@@ -87,6 +88,21 @@ public class Xus2 implements EntryPoint {
 						output.getStyle().setHeight(rect.containsKey("rect.h") ? rect.get("rect.h") : 0, Unit.PX);
 					}
 				});
+				
+				l.add(e);
+			}
+		});
+		
+		unlistenRectBtn.addClickHandler(new ClickHandler() {
+			
+			@Override
+			public void onClick(ClickEvent event) {
+				for (Effect<XusSet> effect : l) {
+					xusClient.xusUnlisten("rect", effect);					
+				}
+				
+				l.clear();
+				
 			}
 		});
 		
@@ -124,7 +140,7 @@ public class Xus2 implements EntryPoint {
 		listenBtn.addClickHandler(new ClickHandler() {
 			@Override
 			public void onClick(ClickEvent event) {
-				xusClient.xusListen(listenKey.getText(),listener++, new Effect<XusSet>() {
+				xusClient.xusListen(listenKey.getText(), new Effect<XusSet>() {
 					
 					@Override
 					public void e(XusSet set) {
@@ -156,5 +172,7 @@ public class Xus2 implements EntryPoint {
 				}, null);
 			}
 		});
+		
+		xusClient.xusSend("/xus2/xus?cmd=init");
 	}
 }
