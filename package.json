@@ -1,0 +1,19 @@
+{
+    "author": "Bill Burdick <bill.burdick@gmail.com>",
+    "name": "Xus",
+    "description": "messaging and storage for local and remote peers",
+    "version": "0.1.0",
+    "main": "index",
+    "dependencies": {
+        "leveldb": "~0.7.1",
+        "lodash": "~0.6.1"
+    },
+    "devDependencies": {
+        "coffee-script": "~1.3.0",
+        "mocha": "~1.3.0"
+    },
+    "optionalDependencies": {},
+    "engines": {
+        "node": ">=0.6.13 <0.9.0"
+    }
+}
