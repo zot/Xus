@@ -3,3 +3,5 @@ bin
 patch-bin
 scratch
 node_modules
+NOTES.html
+README.html
