@@ -2,6 +2,6 @@
 bin
 patch-bin
 scratch
-node_modules
+/node_modules
 NOTES.html
 README.html

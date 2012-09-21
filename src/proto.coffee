@@ -1,39 +1,38 @@
-xus = exports = module.exports = require './xus/proto'
-net = require('net')
-_ = require('lodash')
+exports = module.exports
+$ = require './jquery-1.7.2.min'
+_ = require './lodash'
+
+console.log "jquery: #{jQuery}"
 
 cmds = ['connect', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
 
 setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll']
 
-###
-  Start a xus program
-###
-exports.boot = (ip, port, ready)-> new Server.boot ip, port, read
+####
+# Server
+#
+# connections: an array of objects representing Xus connections
+#
+# each connection has a 'xus' object with information and operations about the connection
+#   name: the peer name
+#   q: the message queue
+#   listening: the variables it's listening to
+#   dump(): dump the message queue to the connection
+#   disconnect(): disconnect the connection
+# 
+####
 
-class Server
+exports.Server = class Server
   connections: []
   peers: {}
   values: {}
   transient: {} # names of transient keys
-  boot: (port, host, ready)->
-    net.createServer (c)-> @handleConnection(c)
-    server.listen port, host, ready
-    this
-  handleConnection: (con)->
-    con.q = []
-    @connections.push(con)
-    con.on 'data', (data) =>
-      msgs = (@saved + data).split('\n')
-      if data[data.length - 1] != '\n' then @saved = msgs.pop()
-      @processMsg con, msg, msg for msg in msgs
-      dump con for con in @connections
   processMsg: (con, [name, key], msg)->
     if name in cmds
       @[name] con, msg
       if name in setCmds
         con.q.push msg for con in @relevantConnections prefixes key
-        if key.match '^peers/listen$' then setListening con, @values[key]
+        if key.match '^peers/listen$' then @setListening con, @values[key]
         if !(@transient[key] is true) then @store key, value
     else @disconnect con, "Bad message: #{msg}"
   relevantConnections: (keyPrefixes)-> _.filter @connections, (con)->caresAbout con, keyPrefixes
@@ -41,15 +40,27 @@ class Server
     @peers[name] = con
     con.name = name
     con.listening = {}
+    con.q = []
   disconnect: (con, msg)->
     idx = @connections.indexOf con
     if idx > -1
       @connections.splice idx, 1
       if con.name then peers[con.name] = null
       con.q.push ["error", msg]
-      dump con
+      con.dump()
+      @primDisconnect
+  setListening: (con, listening)->
+    old = con.listening
+    con.listening = {}
+    con.listening[path + '/'] = true for path in listening
+    for path in listening
+      if _.all prefixes(path), ((p)->!old[p]) then @sendAll con, path
+      old[path + '/'] = true
+  # Storage methods -- have to be filled in by storage strategy
   store: (key, value)-> # do nothing, for now
-    console.log "Store #{key} = #{JSON.stringify value}"
+    throw new Error "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
+  sendAll: (con, path)-> # send values for path and all of its children to con
+    throw new Error "Can't send data for #{path} because no storage is configured"
   # Commands
   connect: (con, [x, name])->
     if !name then @disconnect con, "No peer name"
@@ -68,20 +79,11 @@ class Server
     val = @values[key]
     val.splice idx, 1 while (idx = val.indexOf value) > -1
 
-dump = (con)->
-  if con.q.length
-    con.write JSON.stringify con.q
-    con.q = []
-
-setListening = (con, listening)->
-  con.listening = {}
-  con.listening[path + '/'] = true for path in listening
-
 caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p] is true
 
 prefixes = (key)->
   result = []
-  splitKey = key.split '/'
+  splitKey = _without (key.split '/'), ''
   while splitKey.length
     result.push splitKey.join '/'
     splitKey.pop()

@@ -1,7 +1,8 @@
-Two configurations:
+Three ways to connect:
 
-* standalone with sockets
-* in JS vm, using Web Workers and Web SQL Database
+* In-VM
+* Shared Web Worker
+* Socket
 
 double-clicking a Xus db should start up the app
 
