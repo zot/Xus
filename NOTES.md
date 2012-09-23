@@ -1,8 +1,36 @@
-Three ways to connect:
+# Many ways to connect:
 
-* In-VM
-* Shared Web Worker
-* Socket
+* local: In-VM
+* worker: Shared Web Worker
+* Sockets
+* WebSockets
+* Xus Proxy, running through sockets or WebSockets
+
+# Xus command
+
+* list -- display running xuses
+* kill server -- kill a xus
+* run cmd arg... -- run command in the context of a xus
+   * cmd's ENV contains connection info for spawned commands
+   * cmd's stdin gets listener results from xus
+   * cmd's stdout talks to xus
+   * cmd's \[3] is original stdin
+   * cmd's \[4] is original stdout
+   * run terminates when cmd terminates
+
+Example Leisure command, built using xus command
+
+* list -- lists Leisure projects from GDrive
+* edit project
+   * start node
+   * edit project using chrome, node puts connection parameters in URL
+   * browser proxies to Xus in node (connect with WebSockets?)
+* selections -- display contents of selections that the user makes
+* select -- select a range of text
+* replaceSelection -- replace selection with some text
+* contents -- cat contents of document
+
+# Misc
 
 double-clicking a Xus db should start up the app
 
@@ -16,19 +44,19 @@ opening a db with xus should be able to launch the executable (store launch info
 
 package management
 
-storage
+# storage
 
-* mongodb / Web Storage
+* levelDb / Web Storage
 * import
 * inherit (open another sqlite db and/or add tables to the path)
 
 variables
 
-* transient (lost at shutdown) or persistent (remembered at shutdown)
+* transient (not remembered for new listeners, lost at shutdown) or persistent (remembered at shutdown)
 * JSON data types
 * names: a/b/c/d
 
-messages
+# messages
 
 * json arrays of commands (batches), separated by newlines
 * connect name -- name of entry in peers tree
@@ -43,7 +71,7 @@ messages
    * a peer can listen on many paths
    * changes get sent to peers in batches, filtered by what they are listening to
 
-standard paths
+# standard paths
 
 * shared  -- shared data
 * meta -- an entry for each variable that has metadata (/'s are backslashed)
