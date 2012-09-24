@@ -1,13 +1,21 @@
-exports = module.exports = require './proto'
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
+{Connection} = exports = module.exports = require './proto'
+net = require 'net'
 _ = require './lodash.min'
 
 exports.startSocketServer = (xusServer, port, host, ready)->
   context = {connections: []}
   server = net.createServer (c)-> context.connections.push new Connection xusServer, context, c
-  server.listen port, host, ready
+  xusServer.socketServer = server
+  if port then server.listen port, host, ready
+  else server.listen ready
   this
 
-class SocketConnection extends proto.Connection
+class SocketConnection extends Connection
   constructor: (@server, @context, @con)->
     @con.on 'data', (data) =>
       msgs = (@saved + data).split('\n')
@@ -15,7 +23,7 @@ class SocketConnection extends proto.Connection
       @server.processMessages this, _.map msgs, (m)->
         try
           JSON.parse(m)
-        catch
+        catch err
           ['error', m]
   connected: true
   dump: ->

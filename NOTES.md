@@ -9,13 +9,13 @@
 # Xus command
 
 * list -- display running xuses
-* kill server -- kill a xus
+* stop server -- kill a xus
 * run cmd arg... -- run command in the context of a xus
    * cmd's ENV contains connection info for spawned commands
    * cmd's stdin gets listener results from xus
    * cmd's stdout talks to xus
-   * cmd's \[3] is original stdin
-   * cmd's \[4] is original stdout
+   * cmd's fd 3 is original stdin
+   * cmd's fd 4 is original stdout
    * run terminates when cmd terminates
 
 Example Leisure command, built using xus command

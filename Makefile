@@ -1,10 +1,12 @@
-SRC=main proto local
+SRC=proto socket browser
+CMD=main pfs
 JS=$(SRC:%=lib/%.js)
+CMD_JS=$(CMD:%=lib/%.js)
 
-all: $(JS) browser
+all: $(CMD_JS) $(JS) browser
 
 browser: FRC
-	node_modules/browserify/bin/cmd.js lib/main.js -o xus.js
+	node_modules/browserify/bin/cmd.js lib/browser.js -o xus.js
 
 clean: FRC
 	rm -f $(JS)
