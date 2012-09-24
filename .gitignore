@@ -1,5 +1,4 @@
 .scala_dependencies
-bin
 patch-bin
 scratch
 /node_modules

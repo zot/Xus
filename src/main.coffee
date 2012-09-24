@@ -12,17 +12,15 @@ usage = (args)->
   process.exit()
 
 stateFd = null
+state = null
 
 setup = (cont)->
   try
     xusDir = path.join process.env.HOME, '.xus'
     stateFile = path.join xusDir, 'state'
     pfs.stat(xusDir)
-      #.fail(-> pfs.mkdir(xusDir))
-      #.then(-> pfs.open(stateFile, 'a'))
-      # changed when() to allow promises as well as functions
-      .fail(pfs.mkdir(xusDir))
-      .then(pfs.open(stateFile, 'r+'))
+      .fail(-> pfs.mkdir(xusDir))
+      .then(-> pfs.open(stateFile, 'a+'))
       .then((fd)-> pfs.flock (stateFd = fd), 'ex')
       .then(-> pfs.readFile stateFd)
       .then((s)-> (cont || ->)(s))
@@ -34,23 +32,27 @@ run = ->
   console.log "ARGS: #{process.argv.join(' ')}"
   setup (s)->
     state = (s && JSON.parse(s)) || {servers: {}}
-    console.log "State: '#{JSON.stringify state}'"
     i = 2
     args = process.argv
     if i > args.length then usage args
     name = args[1] # name required -- only one instance per name allowed
-    while i < args.length
-      switch args[i]
-        when '-p' then port = args[++i]
-        when '-h' then host = args[++i]
-      i++
-    xusServer = new Server()
-    startSocketServer xusServer, port, host, ->
-      console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
-      state.servers[name] = {address: xusServer.socketServer.address()}
-      pfs.truncate(stateFd, 0)
-        .then(pfs.writeFile(stateFd))
-        .then(pfs.close(stateFd))
+    if state.servers[name]
+      console.log "Error: there is already a server named #{name}"
+      process.exit(2)
+    else
+      while i < args.length
+        switch args[i]
+          when '-p' then port = args[++i]
+          when '-h' then host = args[++i]
+        i++
+      xusServer = new Server()
+      startSocketServer xusServer, port, host, ->
+        console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
+        state.servers[name] = xusServer.socketServer.address()
+        pfs.truncate(stateFd, 0)
+          .then(-> pfs.writeFile(stateFd, JSON.stringify state))
+          .then(-> pfs.close(stateFd))
+          .end()
 
 exports.run = run
 exports.setup = setup

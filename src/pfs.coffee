@@ -11,7 +11,7 @@ ex.open = (path, flags, mode)-> q.ncall(fs.open, fs, path, flags, mode)
 
 ex.close = (fd)-> q.ncall(fs.close, fs, fd)
 
-ex.truncate = (fd, len)-> q.ncall(fs.close, fs, fd, len)
+ex.truncate = (fd, len)-> q.ncall(fs.truncate, fs, fd, len)
 
 ex.mkdir = (path, mode)-> q.ncall(fs.mkdir, fs, path, mode)
 

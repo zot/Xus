@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# this uses socat and jshon
+
+STATE=$HOME/.xus/state
+
+usage() {
+    echo "$(basename $1) [list | start | stop | run | clean -a | clean server]"
+}
+
+checkState() {
+    if [ ! -e $STATE ]; then
+        echo Error: no state file
+        exit 1
+    fi
+}
+
+listServer() {
+    echo $1 $(echo $2 | jshon -e address -u) $(echo $2 | jshon -e port -u)
+}
+
+removeEntry() {
+    if [ -e $STATE ]; then
+        st=$(<$STATE)
+        if [ -n "$st" ]; then
+            echo $st | jshon -e servers -d $1 -p > $STATE
+        fi
+    fi
+}
+
+cmd="$1"
+if [ $# != 0 ]; then
+    shift
+fi
+case "$cmd" in
+list)
+        if [ ! -e $STATE ]; then
+            exit
+        fi
+        state="$(<$STATE)"
+        if [ -n "$state" ]; then
+            servers=$(echo $state | jshon -e servers)
+            for server in $(echo $servers | jshon -k); do
+                listServer $server "$(echo $servers | jshon -e $server)"
+            done
+        fi
+;;
+start)
+        name=$1
+        shift
+        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
+        if [ $? != 2 ]; then
+            removeEntry $name
+        fi
+;;
+stop)
+        echo stop not implemented, yet
+        exit 1
+;;
+clean)
+        if [ ! -e $STATE ]; then
+            exit
+        fi
+        state="$(<$STATE)"
+        if [ -n "$state" ]; then
+            if [ -z "$1" ]; then
+                usage
+            elif [ "$1" = -a ]; then
+                echo $state | jshon -d servers -n object -i servers > $STATE
+            else
+                echo $state | jshon -e servers -d "$1" -p > $STATE
+            fi
+        fi
+;;
+run)
+        socat TCP:localhost:3000 "EXEC:$*,fdin=3,fdout=4"
+;;
+*) usage $0
+;;
+esac
