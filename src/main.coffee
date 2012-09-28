@@ -31,6 +31,8 @@ setup = (cont)->
 run = ->
   console.log "ARGS: #{process.argv.join(' ')}"
   setup (s)->
+    socketAddr = null
+    webSocketAddr = null
     state = (s && JSON.parse(s)) || {servers: {}}
     i = 2
     args = process.argv
@@ -42,17 +44,27 @@ run = ->
     else
       while i < args.length
         switch args[i]
-          when '-p' then port = args[++i]
-          when '-h' then host = args[++i]
+          when '-s' then socketAddr = args[++i] || ':'
+          when '-w' then webSocketAddr = args[++i] || ':'
         i++
       xusServer = new Server()
-      startSocketServer xusServer, port, host, ->
-        console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
-        state.servers[name] = xusServer.socketServer.address()
-        pfs.truncate(stateFd, 0)
-          .then(-> pfs.writeFile(stateFd, JSON.stringify state))
-          .then(-> pfs.close(stateFd))
-          .end()
+      if socketAddr
+        [host, port] = parseAddr socketAddr
+        startSocketServer xusServer, host, port, ->
+          console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
+          state.servers[name] = xusServer.socketServer.address()
+          state.servers[name].pid = process.pid
+          pfs.truncate(stateFd, 0)
+            .then(-> pfs.writeFile(stateFd, JSON.stringify state))
+            .then(-> pfs.close(stateFd))
+            .end()
+      if webSocketAddr then console.log('webSocket server not implmented, yet')
+        
+
+parseAddr = (addr)->
+  [host, port] = parts = addr.split ':'
+  if parts.length > 2 then throw new Error "Bad address format, expected [host:]port, but got #{addr}"
+  (port && [host || null, port]) || [null, host || null]
 
 exports.run = run
 exports.setup = setup

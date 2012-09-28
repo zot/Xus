@@ -65,9 +65,9 @@ storageModes = [storage_transient, storage_memory, storage_permanent]
 #
 # Transports must add these methods:
 #
-# dump(): send commands in @q to the connection and clear @q
+# write(str): send commands to the connection
 # 
-# disconnect(): disconnect connection
+# close(): close connection
 # 
 ####
 
@@ -75,12 +75,34 @@ exports.Connection = class Connection
   constructor: (@server)->
     @q = []
     @listening = {}
+    @saved = ''
   setName: (@name)->
-    @peerPath = "peers/#{name}"
-    @listenPath = "#{@peerPath/listeners}"
+    console.log "Setting name: #{@name}"
+    @peerPath = "peer/#{name}"
+    @listenPath = "#{@peerPath}/listen"
   connected: false
-  dump: -> @server.disconnect this, error_bad_connection, "Connection has no 'dump' method"
-  disconnect: -> @server.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
+  newData: (data)->
+    console.log "saved: #{@saved}"
+    msgs = (@saved + data).split('\n')
+    console.log "Received data, saved: #{@saved}, msgs: #{JSON.stringify msgs},  data: #{data}"
+    @saved = if data[data.length - 1] is '\n' then '' else msgs.pop()
+    @server.processBatches @, _.map msgs, (m)->
+      console.log "msg: #{m}"
+      try
+        JSON.parse(m)
+      catch err
+        ['error', "Could not parse message: #{m}"]
+  dump: ->
+    if @connected && @q.length
+      console.log "@@ WRITING @@:#{JSON.stringify @q}"
+      @write "#{JSON.stringify @q}\n"
+      @q = []
+  disconnect: ->
+    @connected = false
+    @q = null
+    @close()
+  write: -> @server.disconnect this, error_bad_connection, "Connection has no 'write' method"
+  close: -> @server.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
     
 
 ####
@@ -106,61 +128,92 @@ exports.Server = class Server
   newKeys: false
   oldListens: null
   storageModes: {} # keys and their storage modes
-  processMessages: (con, msgs)->
-    @processMsg con, msg, msg for msg in msgs
+  anonymousPeerCount: 0
+  processBatches: (con, batches)->
+    for batch in batches
+      for msg in batch
+        @processMsg con, msg, msg
     if @newKeys
       @newKeys = false
       @keys.sort()
-    if @oldListens
+    if @newListens
+      @setListens con
       @newListens = false
-      @setListens con, oldListens
-      @oldListens = null
-    dump con for con in @connections
+    con.dump() for con in @connections
   processMsg: (con, [name, key], msg)->
+    console.log "PROCESS #{msg}"
     if con.connected
       if name in cmds
         isSetter = name in setCmds
-        if isSetter and key.match '^peers/[^/]+/listen$' then @oldListens = @oldListens || @values[key]
-        if @[name] con, msg
-          if isSetter
-            c.q.push msg for c in @relevantConnections c, prefixes key
-            if @storageModes[key] is storage_permanent then @store con, key, value
+        if typeof key is 'string' then key = msg[1] = key.replace /^this/, "peer/#{con.name}"
+        if isSetter and key is con.listenPath then @newListens = true
+        if (@[name] con, msg) and isSetter
+          console.log "KEY: #{key}, msg: #{JSON.stringify msg}"
+          c.q.push msg for c in @relevantConnections c, prefixes key
+          if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   relevantConnections: (con, keyPrefixes)-> _.filter @connections, (c)-> c isnt con && caresAbout c, keyPrefixes
   addPeer: (con, name)->
     con.setName name
     @peers[name] = con
+    @connections.push con
+    @values[con.listenPath] = []
   disconnect: (con, errorType, msg)->
+    console.log "*\n* DISCONNECT\n*"
     idx = @connections.indexOf con
     if idx > -1
+      peerKey = "peer/#{con.name}"
+      peerKeys = @keysForPrefix peerKey
+      if con.name then delete @peers[con.name]
+      @removeKey key for key in peerKeys # this could be more efficient, but does it matter?
       @connections.splice idx, 1
-      if con.name then peers[con.name] = null
-      @error con, errorType, msg
+      if msg then @error con, errorType, msg
       con.dump()
-      @primDisconnect
-    # return false so faulty message won't be forwarded
+      con.close()
+    # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
-  setListens: (con, listening)->
+  setListens: (con)->
     old = con.listening
     con.listening = {}
-    con.listening[path + '/'] = true for path in listening
-    for path in listening
+    console.log "Setting listens, name: #{con.name}, old: #{old}, listenPath: #{con.listenPath}, new: #{@values[con.listenPath]}" # con = #{require('util').inspect con}"
+    for path in @values[con.listenPath]
+      con.listening[path + '/'] = true
       if _.all prefixes(path), ((p)->!old[p]) then @sendAll con, path
       old[path + '/'] = true
   error: (con, errorType, msg)->
     con.q.push ['error', errorType, msg]
     false
+  removeKey: (key)->
+    delete @storageModes[key]
+    delete @values[key]
+    idx = _.search key, @keys
+    if idx > -1 then @keys.splice idx, 1
+  keysForPrefix: (prefix)->
+    keys = []
+    idx = _.search prefix, @keys
+    if idx > -1
+      console.log "Getting all keys for prefix: #{prefix}, start: #{idx}, keys: #{@keys.join ', '}"
+      prefixPattern = "^#{prefix}/"
+      keys.push prefix
+      keys.push @keys[idx] while @keys[++idx] && @keys[idx].match prefixPattern
+    keys
+  sendAll: (con, path)-> # send values for path and all of its children to con
+    console.log "Keys for #{path} = #{@keysForPrefix path}"
+    console.log "All keys: #{@keys.join ', '}"
+    for key in @keysForPrefix path
+      con.q.push ['set', key, @values[key]]
   # Storage methods -- have to be filled in by storage strategy
   store: (con, key, value)-> # do nothing, for now
     @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
-  delete: (con, key)-> # do nothing, for now
+  remove: (con, key)-> # do nothing, for now
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
-  sendAll: (con, path)-> # send values for path and all of its children to con
-    @error con, warning_no_storage, "Can't send data for #{path} because no storage is configured"
   # Commands
   connect: (con, [x, name])->
-    if !name then @disconnect con, "No peer name"
-    else if @peers[name] then @disconnect con, "Duplicate peer name: #{name}"
+    console.log "CONNECT: #{name}"
+    if !name then name = "$anonymous-#{@anonymousPeerCount++}"
+    if @peers[name]
+      console.log "*\n* DISCONNECTING BECAUSE OF DUPLICATE PEER NAME\n*"
+      @disconnect con, "Duplicate peer name: #{name}"
     else @addPeer con, name
     true
   badMessage: (con, [x, msg])-> @disconnect con, error_bad_message, "Malformed message: #{JSON.stringify msg}"
@@ -168,12 +221,14 @@ exports.Server = class Server
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
       if storageMode and storageMode isnt @storageModes[key] and @storageModes[key] is storage_permanent
-        @delete con, key
+        @remove con, key
       if (storageMode || @storageModes[key]) isnt storage_transient
         if !@storageModes[key]
           storageMode = storageMode || storage_memory
           @keys.push key
           @newKeys = true
+          console.log "Added key: #{key}, unsorted keys: #{@keys.join ', '}"
+        console.log "Setting #{key} = #{value}"
         @values[key] = value
       if storageMode then @storageModes[key] = storageMode
       true
@@ -206,7 +261,7 @@ caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p] is tr
 
 prefixes = (key)->
   result = []
-  splitKey = _without (key.split '/'), ''
+  splitKey = _.without (key.split '/'), ''
   while splitKey.length
     result.push splitKey.join '/'
     splitKey.pop()
@@ -221,7 +276,7 @@ _.search = (key, arr)->
   right = arr.length - 1
   while left < right
     mid = Math.floor (left + right) / 2
-    if arr[mid] is key then left = right = mid
-    if arr[mid] > key then right = mid
-    else left = mid + 1
-  return left
+    if arr[mid] is key then return mid
+    else if arr[mid] < key then left = mid + 1
+    else right = mid - 1
+  if arr[left] < key then left + 1 else left

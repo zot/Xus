@@ -1,0 +1,43 @@
+#!/bin/bash
+
+#####
+# xus-inc
+#
+# demo of a xus shell script
+#
+# xus run bubba xus-inc a
+#
+# This hooks up to xus instance 'bubba' and increments the value at 'a'
+#
+# xus run connects file descriptor 3 to input and file descriptor 4 to output of the xus instance
+#
+#
+# Here's how it works:
+#
+# Connect to xus and listen to the key, using file descriptor 4 as output (connected by the 'xus' command)
+#
+# Read the response
+#   The new listener gets the current values (as 'set' messages) for $key and its children, in sorted order
+#   Since that is the only listener and the values are in sorted order, we just need the first one
+#   If there is no value for $key, there will still be a set message, but the value will be null
+#
+# Use jshon to extract the key and value into $1 and $2
+#
+# Send a 'set' command to the xus instance with the new value
+#
+# Echo the new value
+#
+#####
+
+if [ $# != 1 ]; then
+    echo usage: $(basename $0) key
+    exit 1
+fi
+
+key="$1"
+echo '[["connect"],["set", "this/listen", ["'$key'"]]]' >&4
+read line <&3
+set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+new=$(expr $2 + 1)
+echo '[["set", "'$1'", '$new']]'  >&4
+echo set "$key" = $new

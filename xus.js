@@ -399,21 +399,20 @@ require.define("/socket.js",function(require,module,exports,__dirname,__filename
 
   _ = require('./lodash.min');
 
-  exports.startSocketServer = function(xusServer, port, host, ready) {
+  exports.startSocketServer = function(xusServer, host, port, ready) {
     var context, server;
     context = {
       connections: []
     };
     server = net.createServer(function(c) {
-      return context.connections.push(new Connection(xusServer, context, c));
+      return context.connections.push(new SocketConnection(xusServer, context, c));
     });
     xusServer.socketServer = server;
     if (port) {
-      server.listen(port, host, ready);
+      return server.listen(port, host, ready);
     } else {
-      server.listen(ready);
+      return server.listen(ready);
     }
-    return this;
   };
 
   SocketConnection = (function(_super) {
@@ -425,36 +424,31 @@ require.define("/socket.js",function(require,module,exports,__dirname,__filename
       this.server = server;
       this.context = context;
       this.con = con;
+      SocketConnection.__super__.constructor.call(this, this.server);
       this.con.on('data', function(data) {
-        var msgs;
-        msgs = (_this.saved + data).split('\n');
-        if (data[data.length - 1] !== '\n') {
-          _this.saved = msgs.pop();
-        }
-        return _this.server.processMessages(_this, _.map(msgs, function(m) {
-          try {
-            return JSON.parse(m);
-          } catch (err) {
-            return ['error', m];
-          }
-        }));
+        return _this.newData(data);
+      });
+      this.con.on('error', function(hadError) {
+        return _this.server.disconnect(_this);
+      });
+      this.con.on('close', function(hadError) {
+        return _this.server.disconnect(_this);
       });
     }
 
     SocketConnection.prototype.connected = true;
 
-    SocketConnection.prototype.dump = function() {
-      if (this.connected && this.q.length) {
-        this.con.write(JSON.stringify(this.q));
-        return this.q = [];
-      }
+    SocketConnection.prototype.write = function(str) {
+      return this.con.write(str);
     };
 
-    SocketConnection.prototype.disconnect = function() {
-      this.connected = false;
-      this.con.close();
-      this.q = null;
-      return this.context.connections = this.context.connections.without(this.con);
+    SocketConnection.prototype.close = function() {
+      try {
+        this.con.destroy();
+      } catch (err) {
+        console.log("Error closing connection: " + err.stack);
+      }
+      return this.context.connections = _.without(this.context.connections, this.con);
     };
 
     return SocketConnection;
@@ -504,21 +498,53 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       this.server = server;
       this.q = [];
       this.listening = {};
+      this.saved = '';
     }
 
     Connection.prototype.setName = function(name) {
       this.name = name;
-      this.peerPath = "peers/" + name;
-      return this.listenPath = "" + (this.peerPath / listeners);
+      console.log("Setting name: " + this.name);
+      this.peerPath = "peer/" + name;
+      return this.listenPath = "" + this.peerPath + "/listen";
     };
 
     Connection.prototype.connected = false;
 
+    Connection.prototype.newData = function(data) {
+      var msgs;
+      console.log("saved: " + this.saved);
+      msgs = (this.saved + data).split('\n');
+      console.log("Received data, saved: " + this.saved + ", msgs: " + (JSON.stringify(msgs)) + ",  data: " + data);
+      this.saved = data[data.length - 1] === '\n' ? '' : msgs.pop();
+      return this.server.processBatches(this, _.map(msgs, function(m) {
+        console.log("msg: " + m);
+        try {
+          return JSON.parse(m);
+        } catch (err) {
+          return ['error', "Could not parse message: " + m];
+        }
+      }));
+    };
+
     Connection.prototype.dump = function() {
-      return this.server.disconnect(this, error_bad_connection, "Connection has no 'dump' method");
+      if (this.connected && this.q.length) {
+        console.log("@@ WRITING @@:" + (JSON.stringify(this.q)));
+        this.write("" + (JSON.stringify(this.q)) + "\n");
+        return this.q = [];
+      }
     };
 
     Connection.prototype.disconnect = function() {
+      this.connected = false;
+      this.q = null;
+      return this.close();
+    };
+
+    Connection.prototype.write = function() {
+      return this.server.disconnect(this, error_bad_connection, "Connection has no 'write' method");
+    };
+
+    Connection.prototype.close = function() {
       return this.server.disconnect(this, error_bad_connection, "Connection has no 'disconnect' method");
     };
 
@@ -544,26 +570,30 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
     Server.prototype.storageModes = {};
 
-    Server.prototype.processMessages = function(con, msgs) {
-      var msg, _i, _j, _len, _len1, _ref, _results;
-      for (_i = 0, _len = msgs.length; _i < _len; _i++) {
-        msg = msgs[_i];
-        this.processMsg(con, msg, msg);
+    Server.prototype.anonymousPeerCount = 0;
+
+    Server.prototype.processBatches = function(con, batches) {
+      var batch, msg, _i, _j, _k, _len, _len1, _len2, _ref, _results;
+      for (_i = 0, _len = batches.length; _i < _len; _i++) {
+        batch = batches[_i];
+        for (_j = 0, _len1 = batch.length; _j < _len1; _j++) {
+          msg = batch[_j];
+          this.processMsg(con, msg, msg);
+        }
       }
       if (this.newKeys) {
         this.newKeys = false;
         this.keys.sort();
       }
-      if (this.oldListens) {
+      if (this.newListens) {
+        this.setListens(con);
         this.newListens = false;
-        this.setListens(con, oldListens);
-        this.oldListens = null;
       }
       _ref = this.connections;
       _results = [];
-      for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-        con = _ref[_j];
-        _results.push(dump(con));
+      for (_k = 0, _len2 = _ref.length; _k < _len2; _k++) {
+        con = _ref[_k];
+        _results.push(con.dump());
       }
       return _results;
     };
@@ -571,22 +601,25 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     Server.prototype.processMsg = function(con, _arg, msg) {
       var c, isSetter, key, name, _i, _len, _ref;
       name = _arg[0], key = _arg[1];
+      console.log("PROCESS " + msg);
       if (con.connected) {
         if (__indexOf.call(cmds, name) >= 0) {
           isSetter = __indexOf.call(setCmds, name) >= 0;
-          if (isSetter && key.match('^peers/[^/]+/listen$')) {
-            this.oldListens = this.oldListens || this.values[key];
+          if (typeof key === 'string') {
+            key = msg[1] = key.replace(/^this/, "peer/" + con.name);
           }
-          if (this[name](con, msg)) {
-            if (isSetter) {
-              _ref = this.relevantConnections(c, prefixes(key));
-              for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-                c = _ref[_i];
-                c.q.push(msg);
-              }
-              if (this.storageModes[key] === storage_permanent) {
-                return this.store(con, key, value);
-              }
+          if (isSetter && key === con.listenPath) {
+            this.newListens = true;
+          }
+          if ((this[name](con, msg)) && isSetter) {
+            console.log("KEY: " + key + ", msg: " + (JSON.stringify(msg)));
+            _ref = this.relevantConnections(c, prefixes(key));
+            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+              c = _ref[_i];
+              c.q.push(msg);
+            }
+            if (this.storageModes[key] === storage_permanent) {
+              return this.store(con, key, value);
             }
           }
         } else {
@@ -603,35 +636,45 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
     Server.prototype.addPeer = function(con, name) {
       con.setName(name);
-      return this.peers[name] = con;
+      this.peers[name] = con;
+      this.connections.push(con);
+      return this.values[con.listenPath] = [];
     };
 
     Server.prototype.disconnect = function(con, errorType, msg) {
-      var idx;
+      var idx, key, peerKey, peerKeys, _i, _len;
+      console.log("*\n* DISCONNECT\n*");
       idx = this.connections.indexOf(con);
       if (idx > -1) {
-        this.connections.splice(idx, 1);
+        peerKey = "peer/" + con.name;
+        peerKeys = this.keysForPrefix(peerKey);
         if (con.name) {
-          peers[con.name] = null;
+          delete this.peers[con.name];
         }
-        this.error(con, errorType, msg);
+        for (_i = 0, _len = peerKeys.length; _i < _len; _i++) {
+          key = peerKeys[_i];
+          this.removeKey(key);
+        }
+        this.connections.splice(idx, 1);
+        if (msg) {
+          this.error(con, errorType, msg);
+        }
         con.dump();
-        this.primDisconnect;
+        con.close();
       }
       return false;
     };
 
-    Server.prototype.setListens = function(con, listening) {
-      var old, path, _i, _j, _len, _len1, _results;
+    Server.prototype.setListens = function(con) {
+      var old, path, _i, _len, _ref, _results;
       old = con.listening;
       con.listening = {};
-      for (_i = 0, _len = listening.length; _i < _len; _i++) {
-        path = listening[_i];
-        con.listening[path + '/'] = true;
-      }
+      console.log("Setting listens, name: " + con.name + ", old: " + old + ", listenPath: " + con.listenPath + ", new: " + this.values[con.listenPath]);
+      _ref = this.values[con.listenPath];
       _results = [];
-      for (_j = 0, _len1 = listening.length; _j < _len1; _j++) {
-        path = listening[_j];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        path = _ref[_i];
+        con.listening[path + '/'] = true;
         if (_.all(prefixes(path), (function(p) {
           return !old[p];
         }))) {
@@ -647,24 +690,61 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return false;
     };
 
+    Server.prototype.removeKey = function(key) {
+      var idx;
+      delete this.storageModes[key];
+      delete this.values[key];
+      idx = _.search(key, this.keys);
+      if (idx > -1) {
+        return this.keys.splice(idx, 1);
+      }
+    };
+
+    Server.prototype.keysForPrefix = function(prefix) {
+      var idx, keys, prefixPattern;
+      keys = [];
+      idx = _.search(prefix, this.keys);
+      if (idx > -1) {
+        console.log("Getting all keys for prefix: " + prefix + ", start: " + idx + ", keys: " + (this.keys.join(', ')));
+        prefixPattern = "^" + prefix + "/";
+        keys.push(prefix);
+        while (this.keys[++idx] && this.keys[idx].match(prefixPattern)) {
+          keys.push(this.keys[idx]);
+        }
+      }
+      return keys;
+    };
+
+    Server.prototype.sendAll = function(con, path) {
+      var key, _i, _len, _ref, _results;
+      console.log("Keys for " + path + " = " + (this.keysForPrefix(path)));
+      console.log("All keys: " + (this.keys.join(', ')));
+      _ref = this.keysForPrefix(path);
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        key = _ref[_i];
+        _results.push(con.q.push(['set', key, this.values[key]]));
+      }
+      return _results;
+    };
+
     Server.prototype.store = function(con, key, value) {
       return this.error(con, warning_no_storage, "Can't store " + key + " = " + (JSON.stringify(value)) + ", because no storage is configured");
     };
 
-    Server.prototype["delete"] = function(con, key) {
+    Server.prototype.remove = function(con, key) {
       return this.error(con, warning_no_storage, "Can't delete " + key + ", because no storage is configured");
-    };
-
-    Server.prototype.sendAll = function(con, path) {
-      return this.error(con, warning_no_storage, "Can't send data for " + path + " because no storage is configured");
     };
 
     Server.prototype.connect = function(con, _arg) {
       var name, x;
       x = _arg[0], name = _arg[1];
+      console.log("CONNECT: " + name);
       if (!name) {
-        this.disconnect(con, "No peer name");
-      } else if (this.peers[name]) {
+        name = "$anonymous-" + (this.anonymousPeerCount++);
+      }
+      if (this.peers[name]) {
+        console.log("*\n* DISCONNECTING BECAUSE OF DUPLICATE PEER NAME\n*");
         this.disconnect(con, "Duplicate peer name: " + name);
       } else {
         this.addPeer(con, name);
@@ -685,14 +765,16 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         return this.error(con, error_bad_storage_mode, "" + storageMode + " is not a valid storage mode");
       } else {
         if (storageMode && storageMode !== this.storageModes[key] && this.storageModes[key] === storage_permanent) {
-          this["delete"](con, key);
+          this.remove(con, key);
         }
         if ((storageMode || this.storageModes[key]) !== storage_transient) {
           if (!this.storageModes[key]) {
             storageMode = storageMode || storage_memory;
             this.keys.push(key);
             this.newKeys = true;
+            console.log("Added key: " + key + ", unsorted keys: " + (this.keys.join(', ')));
           }
+          console.log("Setting " + key + " = " + value);
           this.values[key] = value;
         }
         if (storageMode) {
@@ -770,7 +852,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
   prefixes = function(key) {
     var result, splitKey;
     result = [];
-    splitKey = _without(key.split('/'), '');
+    splitKey = _.without(key.split('/'), '');
     while (splitKey.length) {
       result.push(splitKey.join('/'));
       splitKey.pop();
@@ -785,15 +867,18 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     while (left < right) {
       mid = Math.floor((left + right) / 2);
       if (arr[mid] === key) {
-        left = right = mid;
-      }
-      if (arr[mid] > key) {
-        right = mid;
-      } else {
+        return mid;
+      } else if (arr[mid] < key) {
         left = mid + 1;
+      } else {
+        right = mid - 1;
       }
     }
-    return left;
+    if (arr[left] < key) {
+      return left + 1;
+    } else {
+      return left;
+    }
   };
 
 }).call(this);

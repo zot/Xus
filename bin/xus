@@ -5,7 +5,22 @@
 STATE=$HOME/.xus/state
 
 usage() {
-    echo "$(basename $1) [list | start | stop | run | clean -a | clean server]"
+    cat <<EOF
+$(basename $1) <command> [<options>]
+
+$(basename $1) list
+$(basename $1) start <name> -- start a xus instance
+$(basename $1) stop <name> -- stop a xus instance
+$(basename $1) run <name> <command> [<arg>...] -- run command in context of named xus instance
+$(basename $1) clean <name> | -a -- delete status information for xus instance or all of them
+$(basename $1) get [-a] <name> <key> -- get a value, -a means include children
+$(basename $1) set <name> <key> <value> -- set a value
+$(basename $1) put <name> <key> <index> <value> -- set the value of a key in a variable
+$(basename $1) insert <name> <key> <index> <value> -- insert a value into an array
+$(basename $1) removeFirst <name> <key> <index> -- remove a value from an array
+$(basename $1) removeAll <name> <key> <index> -- remove all occurrances of a value from an array
+EOF
+    exit 1
 }
 
 checkState() {
@@ -25,6 +40,42 @@ removeEntry() {
         if [ -n "$st" ]; then
             echo $st | jshon -e servers -d $1 -p > $STATE
         fi
+    fi
+}
+
+getPort() {
+    state="$(<$STATE)"
+    if [ -n "$state" ]; then
+        echo "$state" | jshon -e servers -e "$1" -e port
+    fi
+}
+
+showVars() {
+    read line
+    if [ -n "$line" ]; then
+        while [ $(echo $line | jshon -l) != 0 ]; do
+            echo $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+            line=$(echo $line | jshon -d 0)
+        done
+    fi
+}
+
+inc() {
+    xus="$1"
+    name="$2"
+    key="$3"
+    read line
+    if [ -n "$line" ]; then
+        while [ $(echo $line | jshon -l) != 0 ]; do
+            set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+            if [ "$1" = "$key" ]; then
+                new=$(expr $2 + 1)
+                echo set "$key" = $new
+                $xus set "$name" "$key" $new
+                return
+            fi
+            line=$(echo $line | jshon -d 0)
+        done
     fi
 }
 
@@ -48,7 +99,7 @@ list)
 start)
         name=$1
         shift
-        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
+        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name -s "$@"
         if [ $? != 2 ]; then
             removeEntry $name
         fi
@@ -58,14 +109,14 @@ stop)
         exit 1
 ;;
 clean)
-        if [ ! -e $STATE ]; then
+        if [ -z "$1" ]; then
+            usage
+        elif [ ! -e $STATE ]; then
             exit
         fi
         state="$(<$STATE)"
         if [ -n "$state" ]; then
-            if [ -z "$1" ]; then
-                usage
-            elif [ "$1" = -a ]; then
+            if [ "$1" = -a ]; then
                 echo $state | jshon -d servers -n object -i servers > $STATE
             else
                 echo $state | jshon -e servers -d "$1" -p > $STATE
@@ -73,7 +124,47 @@ clean)
         fi
 ;;
 run)
-        socat TCP:localhost:3000 "EXEC:$*,fdin=3,fdout=4"
+        if [ -z "$2" ]; then
+            usage
+        elif [ ! -e $STATE ]; then
+            echo $1 is not running.
+            exit
+        fi
+        port=$(getPort "$1")
+        if [ -n "$port" ]; then
+            shift
+            socat TCP:localhost:$port "EXEC:$*,fdin=3,fdout=4"
+        fi
+;;
+set)
+        if [ -z "$3" ]; then
+            usage
+        fi
+        port=$(getPort "$1")
+        if [ -n "$port" ]; then
+            cat <<EOF | socat - TCP:localhost:$port
+[["connect"],["set", "$2", $3]]
+EOF
+        fi
+;;
+get)
+        if [ -z "$2" ]; then
+            usage
+        fi
+        port=$(getPort "$1")
+        if [ -n "$port" ]; then
+            cat <<EOF | socat - TCP:localhost:$port | showVars
+[["connect"],["set", "this/listen", ["$2"]]]
+EOF
+        fi
+;;
+put)
+;;
+insert)
+;;
+removeFirst)
+;;
+removeAll)
 ;;
 *) usage $0
 ;;
