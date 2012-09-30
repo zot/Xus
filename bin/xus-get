@@ -1,0 +1,6 @@
+#!/bin/sh
+
+echo '[["connect"],["set", "this/listen", ["'$1'"]]]' >&4
+read line <&3
+set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+echo $1 = $2

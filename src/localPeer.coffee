@@ -1,15 +1,29 @@
 {prefixes} = exports = require './proto'
 
-exports.LocalPeer = class LocalPeer extends Connection
+exports.Peer = class Peer extends Connection
   constructor: (@server)->
-    @cmds = null
-    @listeners = {}
     @connected = true
+    @cmds = null
+    @changeListeners = {}
+    @treeListeners = {}
     @values = {}
   # listen(key, (cmd, newValue, oldValue, cmds)-> ...)
-  listen: (key, callback)->
-    if !@listeners[key] then @listeners[key] = []
-    @listeners[key].push callback
+  listen: (key, callback, simualateSetsForTree)->
+    if !@changeListeners[key]
+      @changeListeners[key] = []
+      @insert "this/list", -1, key
+    else @tree key
+    @grabTree key, (msg, batch)->
+      if simulateSetsForTree then callback setMsg, batch for setMsg in @setsForTree msg
+      callback (if simulateSetsForTree then @setsForTree msg else msg), batch
+      @changeListeners[key].push = callback
+  setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg by 2
+  grabTree: (key, callback)->
+    if !@treeListeners[key] then @treeListeners[key] = []
+    @treeListeners[key].push callback
+  tree: (key, callback)->
+    @grabTree key, callback
+    @pushCmd ['tree', key]
   set: (key, value)-> @pushCmd ['set', key, value]
   put: (key, index, value)-> @pushCmd ['put', key, index, value]
   insert: (key, index, value)-> @pushCmd ['insert', key, index, value]

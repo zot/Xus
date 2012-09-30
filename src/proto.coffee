@@ -2,16 +2,25 @@ exports = module.exports
 _ = require './lodash.min'
 
 ####
+# 
 # The Xus protocol
 #
-# Each message is a 
+# Most of the messages change values for Xus' keys
+# 
+# Standard keys
+# 
+# this/** -- equivalent to peer/PEER_NAME/*
+# 
+# peer/X/listen -- list of paths that peer X is listening to
+# peer/X/name -- the name of the peer (whatever X is)
+# 
 ####
 
 ####
 # cmds is a list of commands a peer can send
 ####
 
-cmds = ['connect', 'badMessage', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
+cmds = ['connect', 'tree', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
 
 ####
 # Set commands -- commands that change data
@@ -158,6 +167,7 @@ exports.Server = class Server
     @peers[name] = con
     @connections.push con
     @values[con.listenPath] = []
+    @values["#{con.peerPath}/name"] = name
   disconnect: (con, errorType, msg)->
     console.log "*\n* DISCONNECT\n*"
     idx = @connections.indexOf con
@@ -178,7 +188,7 @@ exports.Server = class Server
     console.log "Setting listens, name: #{con.name}, old: #{old}, listenPath: #{con.listenPath}, new: #{@values[con.listenPath]}" # con = #{require('util').inspect con}"
     for path in @values[con.listenPath]
       con.listening[path + '/'] = true
-      if _.all prefixes(path), ((p)->!old[p]) then @sendAll con, path
+      if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path
       old[path + '/'] = true
   error: (con, errorType, msg)->
     con.q.push ['error', errorType, msg]
@@ -197,7 +207,8 @@ exports.Server = class Server
       keys.push prefix
       keys.push @keys[idx] while @keys[++idx] && @keys[idx].match prefixPattern
     keys
-  sendAll: (con, path)-> # send values for path and all of its children to con
+  sendTree: (con, path)-> # send values for path and all of its children to con
+    #*** send ["tree", null, path, ...] to con
     console.log "Keys for #{path} = #{@keysForPrefix path}"
     console.log "All keys: #{@keys.join ', '}"
     for key in @keysForPrefix path
@@ -216,7 +227,8 @@ exports.Server = class Server
       @disconnect con, "Duplicate peer name: #{name}"
     else @addPeer con, name
     true
-  badMessage: (con, [x, msg])-> @disconnect con, error_bad_message, "Malformed message: #{JSON.stringify msg}"
+  tree: (con, [x, cookie, key])-> # cookie, courtesy of Shlomi
+    # *** handle tree command; add all key/value pairs in the tree to the command and send it back
   set: (con, [x, key, value, storageMode])->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
@@ -240,8 +252,8 @@ exports.Server = class Server
   insert: (con, [x, key, value, index])->
     if !(@values[key] instanceof Array) then @disonnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
     else
-      if index is -1 then @values[key].push value
-      else @values[key].splice index, 0, value
+      if index < 0 then index = @values.length + index + 1
+      @values[key].splice index, 0, value
       true
   removeFirst: (con, [x, key, value])->
     if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
@@ -272,6 +284,7 @@ prefixes = (key)->
 # This is the correct position to insert the item and maintain sorted order
 
 _.search = (key, arr)->
+  if arr.length == 0 then return 0
   left = 0
   right = arr.length - 1
   while left < right

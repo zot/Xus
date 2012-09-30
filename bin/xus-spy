@@ -1,0 +1,23 @@
+#!/bin/bash
+
+if [ $# != 1 ]; then
+    echo usage: $(basename $0) key
+    exit 1
+fi
+
+key="$1"
+echo '[["connect"],["set", "this/listen", ["'$key'"]]]' >&4
+while true; do
+    echo READING...
+    read line <&3
+    echo READ: $line
+    if [ "$line" = "" ]; then
+        exit
+    fi
+    while [ $(echo $line | jshon -l) != 0 ]; do
+        set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+        echo $1 $2
+        echo line="$(echo $line | jshon -d 0)"
+        line="$(echo $line | jshon -d 0)"
+    done
+done

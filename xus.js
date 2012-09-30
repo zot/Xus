@@ -468,7 +468,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
   _ = require('./lodash.min');
 
-  cmds = ['connect', 'badMessage', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll'];
+  cmds = ['connect', 'tree', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll'];
 
   setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll'];
 
@@ -638,7 +638,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       con.setName(name);
       this.peers[name] = con;
       this.connections.push(con);
-      return this.values[con.listenPath] = [];
+      this.values[con.listenPath] = [];
+      return this.values["" + con.peerPath + "/name"] = name;
     };
 
     Server.prototype.disconnect = function(con, errorType, msg) {
@@ -678,7 +679,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         if (_.all(prefixes(path), (function(p) {
           return !old[p];
         }))) {
-          this.sendAll(con, path);
+          this.sendTree(con, path);
         }
         _results.push(old[path + '/'] = true);
       }
@@ -715,7 +716,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return keys;
     };
 
-    Server.prototype.sendAll = function(con, path) {
+    Server.prototype.sendTree = function(con, path) {
       var key, _i, _len, _ref, _results;
       console.log("Keys for " + path + " = " + (this.keysForPrefix(path)));
       console.log("All keys: " + (this.keys.join(', ')));
@@ -752,10 +753,9 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return true;
     };
 
-    Server.prototype.badMessage = function(con, _arg) {
-      var msg, x;
-      x = _arg[0], msg = _arg[1];
-      return this.disconnect(con, error_bad_message, "Malformed message: " + (JSON.stringify(msg)));
+    Server.prototype.tree = function(con, _arg) {
+      var cookie, key, x;
+      x = _arg[0], cookie = _arg[1], key = _arg[2];
     };
 
     Server.prototype.set = function(con, _arg) {
@@ -862,6 +862,9 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
   _.search = function(key, arr) {
     var left, mid, right;
+    if (arr.length === 0) {
+      return 0;
+    }
     left = 0;
     right = arr.length - 1;
     while (left < right) {
