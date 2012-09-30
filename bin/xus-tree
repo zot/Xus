@@ -1,0 +1,10 @@
+#!/bin/sh
+
+echo '[["connect"],["value", null, true, "'$1'"]]' >&4
+read line <&3
+line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
+while [ "$(echo $line | jshon -l)" -gt 0 ]; do
+    set $(echo $line | jshon -e 0 -u -p -e 1)
+    echo $1 = $2
+    line="$(echo $line | jshon -d 0 -d 0)"
+done

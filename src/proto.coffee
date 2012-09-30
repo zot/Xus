@@ -20,17 +20,25 @@ _ = require './lodash.min'
 # cmds is a list of commands a peer can send
 ####
 
-cmds = ['connect', 'tree', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
+cmds = ['name', 'value', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
 
 ####
-# Set commands -- commands that change data
+# Commands
+#
+# name name -- set the peer name to a unique name
+#
+# value cookie tree key -- fetch the value or the tree (it tree is true) for a key
+#                       -- sends cmd back, with values added: ["get", cookie, tree, key, k1, v1, ...]
+#
+# -- commands that change data, they all start with key, value --
 #
 # set key value [storageMode]
 #   set the value of a key and optionally change its storage mode
 #
 # put key value index
 #
-# insert key value index
+# insert key value index -- negative indexes start at the position right after the end
+#                        -- so index for a negative is length + 1 + index
 #
 # removeFirst key value
 #   remove the first occurance of value in the key's array
@@ -148,7 +156,7 @@ exports.Server = class Server
     if @newListens
       @setListens con
       @newListens = false
-    con.dump() for con in @connections
+    c.dump() for c in @connections
   processMsg: (con, [name, key], msg)->
     console.log "PROCESS #{msg}"
     if con.connected
@@ -156,18 +164,25 @@ exports.Server = class Server
         isSetter = name in setCmds
         if typeof key is 'string' then key = msg[1] = key.replace /^this/, "peer/#{con.name}"
         if isSetter and key is con.listenPath then @newListens = true
-        if (@[name] con, msg) and isSetter
-          console.log "KEY: #{key}, msg: #{JSON.stringify msg}"
+        if (@[name] con, msg, msg) and isSetter
+          console.log "KEY: #{key}, msg: #{JSON.stringify msg}, relevant connections: #{@relevantConnections c, prefixes key}"
           c.q.push msg for c in @relevantConnections c, prefixes key
           if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   relevantConnections: (con, keyPrefixes)-> _.filter @connections, (c)-> c isnt con && caresAbout c, keyPrefixes
-  addPeer: (con, name)->
-    con.setName name
-    @peers[name] = con
+  addConnection: (con)->
+    con.setName "$anonymous-#{@anonymousPeerCount++}"
+    @peers[con.name] = con
     @connections.push con
     @values[con.listenPath] = []
-    @values["#{con.peerPath}/name"] = name
+    @values["#{con.peerPath}/name"] = con.name
+  renamePeerVars: (oldName, newName)->
+    oldPrefix = "peer/#{oldName}"
+    oldPrefixPat = new RegExp "^peer/#{oldName}"
+    newPrefix = "peer/#{newName}"
+    for key in @keysForPrefix oldPrefix
+      @values[key.replace oldPrefixPat, newPrefix] = @values[key]
+      delete @values[key]
   disconnect: (con, errorType, msg)->
     console.log "*\n* DISCONNECT\n*"
     idx = @connections.indexOf con
@@ -187,9 +202,9 @@ exports.Server = class Server
     con.listening = {}
     console.log "Setting listens, name: #{con.name}, old: #{old}, listenPath: #{con.listenPath}, new: #{@values[con.listenPath]}" # con = #{require('util').inspect con}"
     for path in @values[con.listenPath]
-      con.listening[path + '/'] = true
-      if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path
-      old[path + '/'] = true
+      con.listening[path] = true
+      if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', null, true, path]
+      old[path] = true
   error: (con, errorType, msg)->
     con.q.push ['error', errorType, msg]
     false
@@ -207,28 +222,38 @@ exports.Server = class Server
       keys.push prefix
       keys.push @keys[idx] while @keys[++idx] && @keys[idx].match prefixPattern
     keys
-  sendTree: (con, path)-> # send values for path and all of its children to con
-    #*** send ["tree", null, path, ...] to con
+  sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
     console.log "Keys for #{path} = #{@keysForPrefix path}"
     console.log "All keys: #{@keys.join ', '}"
     for key in @keysForPrefix path
-      con.q.push ['set', key, @values[key]]
+      cmd.push key, @values[key]
+    con.q.push cmd
   # Storage methods -- have to be filled in by storage strategy
   store: (con, key, value)-> # do nothing, for now
     @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
   remove: (con, key)-> # do nothing, for now
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
-  connect: (con, [x, name])->
+  name: (con, [x, name])->
     console.log "CONNECT: #{name}"
     if !name then name = "$anonymous-#{@anonymousPeerCount++}"
     if @peers[name]
       console.log "*\n* DISCONNECTING BECAUSE OF DUPLICATE PEER NAME\n*"
       @disconnect con, "Duplicate peer name: #{name}"
-    else @addPeer con, name
+    else
+      delete @peers[con.name]
+      @renamePeerVars con.name, name
+      con.setName name
+      @peers[name] = con
     true
-  tree: (con, [x, cookie, key])-> # cookie, courtesy of Shlomi
-    # *** handle tree command; add all key/value pairs in the tree to the command and send it back
+  value: (con, [x, cookie, tree, key], cmd)-> # cookie, courtesy of Shlomi
+    console.log "value cmd: #{JSON.stringify cmd}"
+    if tree then @sendTree con, key, cmd
+    else
+      console.log "not tree"
+      if @values[key]? then cmd.push key, @values[key]
+      console.log "pushing cmd: #{cmd}"
+      con.q.push cmd
   set: (con, [x, key, value, storageMode])->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
@@ -269,7 +294,10 @@ exports.Server = class Server
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       true
 
-caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p] is true
+caresAbout = (con, keyPrefixes)->
+  result = _.any keyPrefixes, (p)->con.listening[p]
+  console.log "con #{con.name} #{if result then 'cares about' else 'does not care about'} #{keyPrefixes}, listen: #{JSON.stringify con.listening}"
+  result
 
 prefixes = (key)->
   result = []

@@ -53,9 +53,10 @@ getPort() {
 showVars() {
     read line
     if [ -n "$line" ]; then
+        line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
         while [ $(echo $line | jshon -l) != 0 ]; do
-            echo $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
-            line=$(echo $line | jshon -d 0)
+            echo $(echo $line | jshon -e 0 -u -p -e 1)
+            line=$(echo $line | jshon -d 0 -d 0)
         done
     fi
 }
@@ -143,7 +144,7 @@ set)
         port=$(getPort "$1")
         if [ -n "$port" ]; then
             cat <<EOF | socat - TCP:localhost:$port
-[["connect"],["set", "$2", $3]]
+[["set", "$2", $3]]
 EOF
         fi
 ;;
@@ -154,10 +155,21 @@ get)
         port=$(getPort "$1")
         if [ -n "$port" ]; then
             cat <<EOF | socat - TCP:localhost:$port | showVars
-[["connect"],["set", "this/listen", ["$2"]]]
+[["value", null, false, "$2"]]
 EOF
         fi
 ;;
+tree)
+        if [ -z "$2" ]; then
+            usage
+        fi
+        port=$(getPort "$1")
+        if [ -n "$port" ]; then
+            cat <<EOF | socat - TCP:localhost:$port | showVars
+[["value", null, true, "$2"]]
+EOF
+        fi
+        ;;
 put)
 ;;
 insert)

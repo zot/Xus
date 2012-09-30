@@ -6,18 +6,24 @@ if [ $# != 1 ]; then
 fi
 
 key="$1"
-echo '[["connect"],["set", "this/listen", ["'$key'"]]]' >&4
+echo '[["set", "this/listen", ["'$key'"]]]' >&4
+read line <&3
+line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
+while [ "$(echo $line | jshon -l)" -gt 0 ]; do
+    set $(echo $line | jshon -e 0 -u -p -e 1)
+    echo $1 = $2
+    line="$(echo $line | jshon -d 0 -d 0)"
+done
 while true; do
-    echo READING...
     read line <&3
-    echo READ: $line
     if [ "$line" = "" ]; then
         exit
     fi
     while [ $(echo $line | jshon -l) != 0 ]; do
-        set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
-        echo $1 $2
-        echo line="$(echo $line | jshon -d 0)"
+        set $(echo $line | jshon -e 0 -e 0 -u -p -e 1 -u -p -e 2)
+        extra=""
+        if [ "$(echo $line | jshon -e 0 -l)" -gt 3 ]; then extra="$(echo $line | jshon -e 0 -e 3)"; fi
+        echo $1 $2 $3 $extra
         line="$(echo $line | jshon -d 0)"
     done
 done

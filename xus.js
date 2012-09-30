@@ -434,11 +434,13 @@ require.define("/socket.js",function(require,module,exports,__dirname,__filename
       this.con.on('close', function(hadError) {
         return _this.server.disconnect(_this);
       });
+      this.server.addConnection(this);
     }
 
     SocketConnection.prototype.connected = true;
 
     SocketConnection.prototype.write = function(str) {
+      console.log("CONNECTION WRITING: " + str);
       return this.con.write(str);
     };
 
@@ -468,7 +470,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
   _ = require('./lodash.min');
 
-  cmds = ['connect', 'tree', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll'];
+  cmds = ['name', 'value', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll'];
 
   setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll'];
 
@@ -573,7 +575,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     Server.prototype.anonymousPeerCount = 0;
 
     Server.prototype.processBatches = function(con, batches) {
-      var batch, msg, _i, _j, _k, _len, _len1, _len2, _ref, _results;
+      var batch, c, msg, _i, _j, _k, _len, _len1, _len2, _ref, _results;
       for (_i = 0, _len = batches.length; _i < _len; _i++) {
         batch = batches[_i];
         for (_j = 0, _len1 = batch.length; _j < _len1; _j++) {
@@ -592,8 +594,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       _ref = this.connections;
       _results = [];
       for (_k = 0, _len2 = _ref.length; _k < _len2; _k++) {
-        con = _ref[_k];
-        _results.push(con.dump());
+        c = _ref[_k];
+        _results.push(c.dump());
       }
       return _results;
     };
@@ -611,8 +613,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
           if (isSetter && key === con.listenPath) {
             this.newListens = true;
           }
-          if ((this[name](con, msg)) && isSetter) {
-            console.log("KEY: " + key + ", msg: " + (JSON.stringify(msg)));
+          if ((this[name](con, msg, msg)) && isSetter) {
+            console.log("KEY: " + key + ", msg: " + (JSON.stringify(msg)) + ", relevant connections: " + (this.relevantConnections(c, prefixes(key))));
             _ref = this.relevantConnections(c, prefixes(key));
             for (_i = 0, _len = _ref.length; _i < _len; _i++) {
               c = _ref[_i];
@@ -634,12 +636,27 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       });
     };
 
-    Server.prototype.addPeer = function(con, name) {
-      con.setName(name);
-      this.peers[name] = con;
+    Server.prototype.addConnection = function(con) {
+      con.setName("$anonymous-" + (this.anonymousPeerCount++));
+      this.peers[con.name] = con;
       this.connections.push(con);
       this.values[con.listenPath] = [];
-      return this.values["" + con.peerPath + "/name"] = name;
+      return this.values["" + con.peerPath + "/name"] = con.name;
+    };
+
+    Server.prototype.renamePeerVars = function(oldName, newName) {
+      var key, newPrefix, oldPrefix, oldPrefixPat, _i, _len, _ref, _results;
+      oldPrefix = "peer/" + oldName;
+      oldPrefixPat = new RegExp("^peer/" + oldName);
+      newPrefix = "peer/" + newName;
+      _ref = this.keysForPrefix(oldPrefix);
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        key = _ref[_i];
+        this.values[key.replace(oldPrefixPat, newPrefix)] = this.values[key];
+        _results.push(delete this.values[key]);
+      }
+      return _results;
     };
 
     Server.prototype.disconnect = function(con, errorType, msg) {
@@ -675,13 +692,13 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       _results = [];
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         path = _ref[_i];
-        con.listening[path + '/'] = true;
+        con.listening[path] = true;
         if (_.all(prefixes(path), (function(p) {
           return !old[p];
         }))) {
-          this.sendTree(con, path);
+          this.sendTree(con, path, ['value', null, true, path]);
         }
-        _results.push(old[path + '/'] = true);
+        _results.push(old[path] = true);
       }
       return _results;
     };
@@ -716,17 +733,16 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return keys;
     };
 
-    Server.prototype.sendTree = function(con, path) {
-      var key, _i, _len, _ref, _results;
+    Server.prototype.sendTree = function(con, path, cmd) {
+      var key, _i, _len, _ref;
       console.log("Keys for " + path + " = " + (this.keysForPrefix(path)));
       console.log("All keys: " + (this.keys.join(', ')));
       _ref = this.keysForPrefix(path);
-      _results = [];
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         key = _ref[_i];
-        _results.push(con.q.push(['set', key, this.values[key]]));
+        cmd.push(key, this.values[key]);
       }
-      return _results;
+      return con.q.push(cmd);
     };
 
     Server.prototype.store = function(con, key, value) {
@@ -737,7 +753,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return this.error(con, warning_no_storage, "Can't delete " + key + ", because no storage is configured");
     };
 
-    Server.prototype.connect = function(con, _arg) {
+    Server.prototype.name = function(con, _arg) {
       var name, x;
       x = _arg[0], name = _arg[1];
       console.log("CONNECT: " + name);
@@ -748,14 +764,28 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         console.log("*\n* DISCONNECTING BECAUSE OF DUPLICATE PEER NAME\n*");
         this.disconnect(con, "Duplicate peer name: " + name);
       } else {
-        this.addPeer(con, name);
+        delete this.peers[con.name];
+        this.renamePeerVars(con.name, name);
+        con.setName(name);
+        this.peers[name] = con;
       }
       return true;
     };
 
-    Server.prototype.tree = function(con, _arg) {
-      var cookie, key, x;
-      x = _arg[0], cookie = _arg[1], key = _arg[2];
+    Server.prototype.value = function(con, _arg, cmd) {
+      var cookie, key, tree, x;
+      x = _arg[0], cookie = _arg[1], tree = _arg[2], key = _arg[3];
+      console.log("value cmd: " + (JSON.stringify(cmd)));
+      if (tree) {
+        return this.sendTree(con, key, cmd);
+      } else {
+        console.log("not tree");
+        if (this.values[key] != null) {
+          cmd.push(key, this.values[key]);
+        }
+        console.log("pushing cmd: " + cmd);
+        return con.q.push(cmd);
+      }
     };
 
     Server.prototype.set = function(con, _arg) {
@@ -801,11 +831,10 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       if (!(this.values[key] instanceof Array)) {
         return this.disonnect(con, error_variable_not_array, "Can't insert into " + key + " because it is not an array");
       } else {
-        if (index === -1) {
-          this.values[key].push(value);
-        } else {
-          this.values[key].splice(index, 0, value);
+        if (index < 0) {
+          index = this.values.length + index + 1;
         }
+        this.values[key].splice(index, 0, value);
         return true;
       }
     };
@@ -844,9 +873,12 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
   })();
 
   caresAbout = function(con, keyPrefixes) {
-    return _.any(keyPrefixes, function(p) {
-      return con.listening[p] === true;
+    var result;
+    result = _.any(keyPrefixes, function(p) {
+      return con.listening[p];
     });
+    console.log("con " + con.name + " " + (result ? 'cares about' : 'does not care about') + " " + keyPrefixes + ", listen: " + (JSON.stringify(con.listening)));
+    return result;
   };
 
   prefixes = function(key) {
