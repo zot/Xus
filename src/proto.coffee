@@ -177,12 +177,14 @@ exports.Server = class Server
     @values[con.listenPath] = []
     @values["#{con.peerPath}/name"] = con.name
   renamePeerVars: (oldName, newName)->
+    console.log "old values: #{JSON.stringify @values}"
     oldPrefix = "peer/#{oldName}"
     oldPrefixPat = new RegExp "^peer/#{oldName}"
     newPrefix = "peer/#{newName}"
     for key in @keysForPrefix oldPrefix
       @values[key.replace oldPrefixPat, newPrefix] = @values[key]
       delete @values[key]
+    console.log "new values: #{JSON.stringify @values}"
   disconnect: (con, errorType, msg)->
     console.log "*\n* DISCONNECT\n*"
     idx = @connections.indexOf con

@@ -1,8 +1,7 @@
 #!/bin/sh
 
-echo '[["connect"],["value", null, false, "'$1'"]]' >&4
+echo '[["value", null, false, "'$1'"]]' >&4
 read line <&3
 if [ "$(echo $line | jshon -e 0 -l)" -gt 4 ]; then
-   set $(echo $line | jshon -e 0 -e 4 -u -p -e 5)
-   echo $1 = $2
+   echo $(echo $line | jshon -e 0 -e 4 -u -p -e 5) | awk '{print $1 " = " $2}'
 fi
