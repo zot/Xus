@@ -1,4 +1,4 @@
-SRC=proto browser
+SRC=transport proto browser
 CMD=main pfs websocket socket
 JS=$(SRC:%=lib/%.js) lib/websocket-html.js
 CMD_JS=$(CMD:%=lib/%.js)

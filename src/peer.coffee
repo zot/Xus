@@ -1,8 +1,10 @@
 {prefixes} = exports = require './proto'
 
-exports.Peer = class Peer extends Connection
-  constructor: (@server)->
-    @connected = true
+exports.PeerConnection = class PeerConnection
+  send: (batch)->
+
+exports.Peer = class Peer
+  constructor: (@connection)->
     @cmds = null
     @changeListeners = {}
     @treeListeners = {}
@@ -29,19 +31,15 @@ exports.Peer = class Peer extends Connection
   insert: (key, index, value)-> @pushCmd ['insert', key, index, value]
   removeFirst: (key, value)-> @pushCmd ['removeFirst', key, value]
   removeAll: (key, value)-> @pushCmd ['removeAll', key, value]
-  pushCmd: (cmd)->
-    if @cmds is null then throw new Error("Not in a transaction")
-    @cmds.push cmd
+  pushCmd: (cmd)-> if @cmds? then @cmds.push cmd else throw new Error("Not in a transaction")
   transaction: (block)->
     @cmds = []
     block()
     [curCmds, @cmds] = [@cmds, null]
-    if curCmds.length then @server.processMessages this, curCmds
-  disconnect: ->
-    @connected = false
-  dump: ->
-    [queue, @q] = [@q, []]
-    for cmd in queue
+    if curCmds.length then @connection.send curCmds
+  disconnect: -> @connection.disconnect()
+  handleBatch: (batch)->
+    for cmd in batch
       [name, key, value, index] = cmd
       oldValue = name in setCmds && @values[key]
       switch name

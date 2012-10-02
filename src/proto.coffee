@@ -1,4 +1,4 @@
-exports = module.exports
+exports = module.exports = require './transport'
 _ = require './lodash.min'
 
 ####
@@ -63,6 +63,7 @@ error_bad_storage_mode = 'error_bad_storage_mode'
 error_variable_not_object = 'error_variable_not_object'
 error_variable_not_array = 'error_variable_not_array'
 error_bad_connection = 'error_bad_connection'
+error_duplicate_peer_name = 'error_duplicate_peer_name'
 
 ####
 # STORAGE MODES FOR VARIABLES
@@ -76,51 +77,6 @@ storage_transient = 'transient'
 storage_permanent = 'permanent'
 
 storageModes = [storage_transient, storage_memory, storage_permanent]
-
-####
-# CONNECTION CLASS
-#
-# Transports must add these methods:
-#
-# write(str): send commands to the connection
-# 
-# close(): close connection
-# 
-####
-
-exports.Connection = class Connection
-  constructor: (@server)->
-    @q = []
-    @listening = {}
-    @saved = ''
-  setName: (@name)->
-    console.log "Setting name: #{@name}"
-    @peerPath = "peer/#{name}"
-    @listenPath = "#{@peerPath}/listen"
-  connected: false
-  newData: (data)->
-    console.log "saved: #{@saved}"
-    msgs = (@saved + data).split('\n')
-    console.log "Received data, saved: #{@saved}, msgs: #{JSON.stringify msgs},  data: #{data}"
-    @saved = if data[data.length - 1] is '\n' then '' else msgs.pop()
-    @server.processBatches @, _.map msgs, (m)->
-      console.log "msg: #{m}"
-      try
-        JSON.parse(m)
-      catch err
-        ['error', "Could not parse message: #{m}"]
-  dump: ->
-    if @connected && @q.length
-      console.log "@@ WRITING @@:#{JSON.stringify @q}"
-      @write "#{JSON.stringify @q}\n"
-      @q = []
-  disconnect: ->
-    @connected = false
-    @q = null
-    @close()
-  write: -> @server.disconnect this, error_bad_connection, "Connection has no 'write' method"
-  close: -> @server.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
-    
 
 ####
 # SERVER CLASS -- Xus server objects understand the Xus protocol
@@ -143,13 +99,11 @@ exports.Server = class Server
   values: {}
   keys: []
   newKeys: false
-  oldListens: null
   storageModes: {} # keys and their storage modes
   anonymousPeerCount: 0
-  processBatches: (con, batches)->
-    for batch in batches
-      for msg in batch
-        @processMsg con, msg, msg
+  processBatch: (con, batch)->
+    for msg in batch
+      @processMsg con, msg, msg
     if @newKeys
       @newKeys = false
       @keys.sort()
@@ -166,12 +120,16 @@ exports.Server = class Server
         if isSetter and key is con.listenPath then @newListens = true
         if (@[name] con, msg, msg) and isSetter
           console.log "KEY: #{key}, msg: #{JSON.stringify msg}, relevant connections: #{@relevantConnections c, prefixes key}"
-          c.q.push msg for c in @relevantConnections c, prefixes key
+          c.addCmd msg for c in @relevantConnections c, prefixes key
           if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   relevantConnections: (con, keyPrefixes)-> _.filter @connections, (c)-> c isnt con && caresAbout c, keyPrefixes
   addConnection: (con)->
-    con.setName "$anonymous-#{@anonymousPeerCount++}"
+    con.name = "$anonymous-#{@anonymousPeerCount++}"
+    console.log "Setting name: #{con.name}"
+    con.listening = {}
+    con.peerPath = "peer/#{con.name}"
+    con.listenPath = "#{con.peerPath}/listen"
     @peers[con.name] = con
     @connections.push con
     @values[con.listenPath] = []
@@ -186,7 +144,7 @@ exports.Server = class Server
       delete @values[key]
     console.log "new values: #{JSON.stringify @values}"
   disconnect: (con, errorType, msg)->
-    console.log "*\n* DISCONNECT\n*"
+    console.log "*\n* DISCONNECT: #{msg}\n*"
     idx = @connections.indexOf con
     if idx > -1
       peerKey = "peer/#{con.name}"
@@ -208,7 +166,7 @@ exports.Server = class Server
       if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', null, true, path]
       old[path] = true
   error: (con, errorType, msg)->
-    con.q.push ['error', errorType, msg]
+    con.addCmd ['error', errorType, msg]
     false
   removeKey: (key)->
     delete @storageModes[key]
@@ -221,15 +179,15 @@ exports.Server = class Server
     if idx > -1
       console.log "Getting all keys for prefix: #{prefix}, start: #{idx}, keys: #{@keys.join ', '}"
       prefixPattern = "^#{prefix}/"
-      keys.push prefix
-      keys.push @keys[idx] while @keys[++idx] && @keys[idx].match prefixPattern
+      if @values[prefix]? then keys.push prefix
+      (if @values[prefix]? then keys.push @keys[idx]) while @keys[++idx] && @keys[idx].match prefixPattern
     keys
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
     console.log "Keys for #{path} = #{@keysForPrefix path}"
     console.log "All keys: #{@keys.join ', '}"
     for key in @keysForPrefix path
       cmd.push key, @values[key]
-    con.q.push cmd
+    con.addCmd cmd
   # Storage methods -- have to be filled in by storage strategy
   store: (con, key, value)-> # do nothing, for now
     @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
@@ -237,11 +195,8 @@ exports.Server = class Server
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
   name: (con, [x, name])->
-    console.log "CONNECT: #{name}"
-    if !name then name = "$anonymous-#{@anonymousPeerCount++}"
-    if @peers[name]
-      console.log "*\n* DISCONNECTING BECAUSE OF DUPLICATE PEER NAME\n*"
-      @disconnect con, "Duplicate peer name: #{name}"
+    if !name? then @disconnect con, error_bad_message, "No name given in name message"
+    else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
     else
       delete @peers[con.name]
       @renamePeerVars con.name, name
@@ -255,7 +210,7 @@ exports.Server = class Server
       console.log "not tree"
       if @values[key]? then cmd.push key, @values[key]
       console.log "pushing cmd: #{cmd}"
-      con.q.push cmd
+      con.addCmd cmd
   set: (con, [x, key, value, storageMode])->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
