@@ -1,4 +1,6 @@
-exports = module.exports = require './transport'
+exports = module.exports = require './base'
+require './transport'
+
 _ = require './lodash.min'
 
 ####
@@ -48,7 +50,7 @@ cmds = ['name', 'value', 'set', 'put', 'insert', 'remove', 'removeFirst', 'remov
 # 
 ####
 
-setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll']
+exports.setCmds = setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll']
 
 ####
 # ERROR TYPES
@@ -84,11 +86,11 @@ storageModes = [storage_transient, storage_memory, storage_permanent]
 # connections: an array of objects representing Xus connections
 #
 # each connection has a 'xus' object with information and operations about the connection
-#   connected: boolean indicating whether the peer is still connected
+#   isConnected(): boolean indicating whether the peer is still connected
 #   name: the peer name
 #   q: the message queue
 #   listening: the variables it's listening to
-#   dump(): dump the message queue to the connection
+#   send(): send the message queue to the connection
 #   disconnect(): disconnect the connection
 # 
 ####
@@ -110,23 +112,23 @@ exports.Server = class Server
     if @newListens
       @setListens con
       @newListens = false
-    c.dump() for c in @connections
+    c.send() for c in @connections
   processMsg: (con, [name, key], msg)->
     console.log "PROCESS #{msg}"
-    if con.connected
+    if con.isConnected()
       if name in cmds
         isSetter = name in setCmds
         if typeof key is 'string' then key = msg[1] = key.replace /^this/, "peer/#{con.name}"
         if isSetter and key is con.listenPath then @newListens = true
         if (@[name] con, msg, msg) and isSetter
           console.log "KEY: #{key}, msg: #{JSON.stringify msg}, relevant connections: #{@relevantConnections c, prefixes key}"
-          c.addCmd msg for c in @relevantConnections c, prefixes key
+          (console.log "adding #{JSON.stringify msg} to #{c.name}"; c.addCmd msg) for c in @relevantConnections c, prefixes key
           if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   relevantConnections: (con, keyPrefixes)-> _.filter @connections, (c)-> c isnt con && caresAbout c, keyPrefixes
   addConnection: (con)->
     con.name = "$anonymous-#{@anonymousPeerCount++}"
-    console.log "Setting name: #{con.name}"
+    console.log "ADDED CONNECTION: #{con.name}"
     con.listening = {}
     con.peerPath = "peer/#{con.name}"
     con.listenPath = "#{con.peerPath}/listen"
@@ -153,7 +155,7 @@ exports.Server = class Server
       @removeKey key for key in peerKeys # this could be more efficient, but does it matter?
       @connections.splice idx, 1
       if msg then @error con, errorType, msg
-      con.dump()
+      con.send()
       con.close()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
@@ -163,7 +165,7 @@ exports.Server = class Server
     console.log "Setting listens, name: #{con.name}, old: #{old}, listenPath: #{con.listenPath}, new: #{@values[con.listenPath]}" # con = #{require('util').inspect con}"
     for path in @values[con.listenPath]
       con.listening[path] = true
-      if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', null, true, path]
+      if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', path, null, true]
       old[path] = true
   error: (con, errorType, msg)->
     con.addCmd ['error', errorType, msg]
@@ -203,7 +205,7 @@ exports.Server = class Server
       con.setName name
       @peers[name] = con
     true
-  value: (con, [x, cookie, tree, key], cmd)-> # cookie, courtesy of Shlomi
+  value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
     console.log "value cmd: #{JSON.stringify cmd}"
     if tree then @sendTree con, key, cmd
     else
@@ -232,7 +234,7 @@ exports.Server = class Server
       @values[key][index] = value
       true
   insert: (con, [x, key, value, index])->
-    if !(@values[key] instanceof Array) then @disonnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
+    if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
     else
       if index < 0 then index = @values.length + index + 1
       @values[key].splice index, 0, value

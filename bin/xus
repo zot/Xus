@@ -9,7 +9,7 @@ usage() {
 $(basename $1) <command> [<options>]
 
 $(basename $1) list
-$(basename $1) start <name> -- start a xus instance
+$(basename $1) start <name> [expr ...] -- start a xus instance, runs optional exprs before starting
 $(basename $1) stop <name> -- stop a xus instance
 $(basename $1) run <name> <command> [<arg>...] -- run command in context of named xus instance
 $(basename $1) clean <name> | -a -- delete status information for xus instance or all of them
@@ -100,7 +100,7 @@ list)
 start)
         name=$1
         shift
-        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name -s "$@"
+        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
         if [ $? != 2 ]; then
             removeEntry $name
         fi

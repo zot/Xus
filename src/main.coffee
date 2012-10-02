@@ -3,7 +3,9 @@
 # License: ZLIB license
 ####
 
-{Server, startSocketServer} = exports = module.exports = require './socket'
+exports = module.exports = require './base'
+{startSocketServer} = require './socket'
+{Server} = exports = require './peer'
 pfs = require './pfs' # my tiny fs promise lib, based on q
 path = require 'path'
 
@@ -42,14 +44,17 @@ run = ->
       console.log "Error: there is already a server named #{name}"
       process.exit(2)
     else
+      exports.xusServer = xusServer = new Server()
       while i < args.length
+        console.log "arg #{i}: #{args[i]}"
         switch args[i]
-          when '-s' then socketAddr = args[++i] || ':'
-          when '-w' then webSocketAddr = args[++i] || ':'
+          when '-s' then socketAddr = args[++i]
+          when '-w' then webSocketAddr = args[++i]
+          else eval args[i] ? 'null'
         i++
-      xusServer = new Server()
-      if socketAddr
-        [host, port] = parseAddr socketAddr
+      if webSocketAddr then console.log('webSocket server not implmented, yet')
+      else
+        [host, port] = parseAddr socketAddr || ':'
         startSocketServer xusServer, host, port, ->
           console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
           state.servers[name] = xusServer.socketServer.address()
@@ -58,8 +63,6 @@ run = ->
             .then(-> pfs.writeFile(stateFd, JSON.stringify state))
             .then(-> pfs.close(stateFd))
             .end()
-      if webSocketAddr then console.log('webSocket server not implmented, yet')
-        
 
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'

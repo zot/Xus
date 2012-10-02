@@ -3,7 +3,8 @@
 # License: ZLIB license
 ####
 
-{Connection} = exports = module.exports = require './proto'
+exports = module.exports = require './base'
+{Connection} = require './transport'
 net = require 'net'
 _ = require './lodash.min'
 
@@ -25,7 +26,7 @@ class SocketConnection extends Connection
   write: (str)->
     console.log "CONNECTION WRITING: #{str}"
     @con.write str
-  close: ->
+  basicClose: ->
     try
       @con.destroy()
     catch err

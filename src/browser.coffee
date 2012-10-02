@@ -1,2 +1,1 @@
-exports = module.exports = require './socket'
-window.xus = exports
+window.xus = module.exports = require './peer'

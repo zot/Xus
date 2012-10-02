@@ -1,15 +1,17 @@
-SRC=transport proto browser
+SRC=transport proto browser peer test base
 CMD=main pfs websocket socket
 JS=$(SRC:%=lib/%.js) lib/websocket-html.js
 CMD_JS=$(CMD:%=lib/%.js)
 
 all: $(CMD_JS) $(JS) browser
 
-browser: FRC
+browser: xus.js
+
+xus.js: $(CMD_JS) $(JS)
 	node_modules/browserify/bin/cmd.js lib/browser.js -o xus.js
 
 clean: FRC
-	rm -f $(JS)
+	rm -f $(JS) $(CMD_JS)
 
 FRC:
 
