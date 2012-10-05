@@ -54,7 +54,8 @@ Xus provides simple, key-value publish and subscribe with optional storage.
 # Xus command details
 
 * list -- display running xuses
-* stop server -- kill a xus
+* sart &lt;server> [-e &lt;module>] [-w &lt;addr>] [-x &lt;cmd>]-- start xus server
+* stop &lt;server> -- kill a xus
 * run cmd arg... -- run command in the context of a xus
    * ENV contains connection info for spawned commands
    * fd 3 gets listener results from xus

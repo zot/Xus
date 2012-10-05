@@ -46,12 +46,14 @@ run = ->
       process.exit(2)
     else
       exports.xusServer = xusServer = new Server()
+      cmd = null
       while i < args.length
         console.log "arg #{i}: #{args[i]}"
         switch args[i]
           when '-s' then socketAddr = args[++i]
           when '-w' then webSocketAddr = args[++i]
           when '-e' then require(args[++i]).main()
+          when '-x' then cmd = args[++i]
         i++
       [host, port] = parseAddr webSocketAddr || ':'
       console.log "STARTING WITH WEB SOCKETS"
@@ -63,6 +65,7 @@ run = ->
         pfs.truncate(stateFd, 0)
           .then(-> pfs.writeFile(stateFd, JSON.stringify state))
           .then(-> pfs.close(stateFd))
+          .then(-> if cmd? then require('child_process').spawn('/bin/sh', ['-c', cmd], {stdio: ['ignore', 1, 2]}) else 1)
           .end()
 
 parseAddr = (addr)->

@@ -930,7 +930,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       if ((this.master != null) && this.master !== con) {
         return this.disconnect(con, error_bad_master, "Xus cannot serve two masters");
       } else {
-        return this.master = value ? con : null;
+        this.master = value ? con : null;
+        return con.addCmd(['set', 'this/master', value]);
       }
     };
 
