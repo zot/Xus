@@ -22,7 +22,7 @@ _ = require './lodash.min'
 # cmds is a list of commands a peer can send
 ####
 
-cmds = ['name', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
+cmds = ['value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
 
 ####
 # Commands
@@ -129,7 +129,7 @@ exports.Server = class Server
           if isSetter and key is con.listenPath then @newListens = true
           if (@[name] con, msg, msg) and isSetter
             if key == "#{con.peerPath}/name" then @name con, msg[2]
-            else if key == "#{con.peerPath}/master" then @setMaster con
+            else if key == "#{con.peerPath}/master" then @setMaster con, msg[2]
             c.addCmd msg for c in @relevantConnections prefixes key
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
@@ -145,7 +145,7 @@ exports.Server = class Server
     con.listening = {}
     @connections.push con
     @values[con.listenPath] = []
-    con.addCmd ['name', con.name]
+    con.addCmd ['set', 'this/name', con.name]
     con.send()
   renamePeerVars: (con, oldName, newName)->
     [@keys] = renameVars @keys, @values, oldName, newName
@@ -204,11 +204,6 @@ exports.Server = class Server
       cmd.push key, @getValue @values[key]
     con.addCmd cmd
   getValue: (value)-> if typeof value == 'function' then value() else value
-  # Storage methods -- have to be filled in by storage strategy
-  store: (con, key, value)-> # do nothing, for now
-    @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
-  remove: (con, key)-> # do nothing, for now
-    @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   name: (con, name)->
     if !name? then @disconnect con, error_bad_message, "No name given in name message"
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
@@ -216,12 +211,17 @@ exports.Server = class Server
       delete @peers[con.name]
       @renamePeerVars con, con.name, name
       @setConName con, name
-      con.addCmd ['name', name]
-  setMaster: (con)->
-    if @master? then @disconnect con, error_bad_master, "Xus cannot server two masters"
+      con.addCmd ['set', 'this/name', name]
+  setMaster: (con, value)->
+    if @master? and @master != con then @disconnect con, error_bad_master, "Xus cannot serve two masters"
     else
-      console.log "Setting master: #{con.name}"
-      @master = con
+      @master = if value then con else null
+      con.addCmd ['set', 'this/master', value]
+  # Storage methods -- have to be filled in by storage strategy
+  store: (con, key, value)-> # do nothing, for now
+    @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
+  remove: (con, key)-> # do nothing, for now
+    @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
   value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
     if tree then @sendTree con, key, cmd

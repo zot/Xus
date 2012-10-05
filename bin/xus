@@ -198,7 +198,7 @@ removeFirst)
 removeAll)
 ;;
 chain-ws)
-        export XUS_PEER="$(wsConnect | jshon -e 0 -e 1 -u)"
+        export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
         exec "$@"
 ;;
 send-cmd)

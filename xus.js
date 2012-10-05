@@ -674,7 +674,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
   _ = require('./lodash.min');
 
-  cmds = ['name', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll'];
+  cmds = ['value', 'set', 'put', 'splice', 'removeFirst', 'removeAll'];
 
   exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll'];
 
@@ -765,7 +765,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
               if (key === ("" + con.peerPath + "/name")) {
                 this.name(con, msg[2]);
               } else if (key === ("" + con.peerPath + "/master")) {
-                this.setMaster(con);
+                this.setMaster(con, msg[2]);
               }
               _ref = this.relevantConnections(prefixes(key));
               for (_i = 0, _len = _ref.length; _i < _len; _i++) {
@@ -802,7 +802,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       con.listening = {};
       this.connections.push(con);
       this.values[con.listenPath] = [];
-      con.addCmd(['name', con.name]);
+      con.addCmd(['set', 'this/name', con.name]);
       return con.send();
     };
 
@@ -913,14 +913,6 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       }
     };
 
-    Server.prototype.store = function(con, key, value) {
-      return this.error(con, warning_no_storage, "Can't store " + key + " = " + (JSON.stringify(value)) + ", because no storage is configured");
-    };
-
-    Server.prototype.remove = function(con, key) {
-      return this.error(con, warning_no_storage, "Can't delete " + key + ", because no storage is configured");
-    };
-
     Server.prototype.name = function(con, name) {
       if (!(name != null)) {
         return this.disconnect(con, error_bad_message, "No name given in name message");
@@ -930,17 +922,24 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         delete this.peers[con.name];
         this.renamePeerVars(con, con.name, name);
         this.setConName(con, name);
-        return con.addCmd(['name', name]);
+        return con.addCmd(['set', 'this/name', name]);
       }
     };
 
-    Server.prototype.setMaster = function(con) {
-      if (this.master != null) {
-        return this.disconnect(con, error_bad_master, "Xus cannot server two masters");
+    Server.prototype.setMaster = function(con, value) {
+      if ((this.master != null) && this.master !== con) {
+        return this.disconnect(con, error_bad_master, "Xus cannot serve two masters");
       } else {
-        console.log("Setting master: " + con.name);
-        return this.master = con;
+        return this.master = value ? con : null;
       }
+    };
+
+    Server.prototype.store = function(con, key, value) {
+      return this.error(con, warning_no_storage, "Can't store " + key + " = " + (JSON.stringify(value)) + ", because no storage is configured");
+    };
+
+    Server.prototype.remove = function(con, key) {
+      return this.error(con, warning_no_storage, "Can't delete " + key + ", because no storage is configured");
     };
 
     Server.prototype.value = function(con, _arg, cmd) {
