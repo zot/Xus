@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#set -x
+
 # this uses socat and jshon
 
 STATE=$HOME/.xus/state
@@ -14,8 +16,9 @@ start <name> [-s <addr>] [-e <expr>]...    start a xus instance
 stop <name>                                stop a xus instance
 run <name> <command> [<arg>]...            run command in context of named xus instance
 clean <name> | -a                          clear info for one or all xus instances
-get [-a] <name> <key>                      get a value, -a means include children
+get [-a] <name> <key>...                   get a value, -a means include children
 set <name> <key> <value>                   set a value
+listen <name> <key>...                     listen for keys
 put <name> <key> <index> <value>           set the value of a key in a variable
 insert <name> <key> <index> <value>        insert a value into an array
 removeFirst <name> <key> <value>           remove first occurrence of value from array
@@ -51,15 +54,27 @@ getPort() {
     fi
 }
 
+showBatches() {
+    while true; do
+        read batch <&3
+        if [ -z "$batch" ]; then break; fi
+        while [ $(echo $batch | jshon -l) != 0 ]; do
+            echo $(echo $batch | jshon -e 0)
+            batch=$(echo $batch | jshon -d 0)
+        done
+    done
+}
+
 showVars() {
-    read line <&3
-    if [ -n "$line" ]; then
-        line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
+    read batch <&3
+    while [ $(echo $batch | jshon -l) != 0 ]; do
+        line="$(echo $batch | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
         while [ $(echo $line | jshon -l) != 0 ]; do
-            echo $(echo $line | jshon -e 0 -u -p -e 1)
+            echo $(echo $line | jshon -e 0 -u -p -e 1) | awk '{print $1 " " $2}'
             line=$(echo $line | jshon -d 0 -d 0)
         done
-    fi
+        batch=$(echo $batch | jshon -d 0)
+    done
 }
 
 inc() {
@@ -88,6 +103,11 @@ wsConnect() {
     echo -e '\r' >&4
     read line <&3
     echo $line
+}
+
+close() {
+    exec 3>&-
+    exec 4>&-
 }
 
 runCmd() {
@@ -162,46 +182,64 @@ run)
         shift
         runCmd $server "$0" chain-ws "$@"
 ;;
-set)
-        if [ -z "$3" ]; then
-            usage
-        fi
-        subCmd set-cmd "$@"
+set) [ -n "$3" ] && subCmd send-cmd "$1" '[["set", "'$2'", '$3']]' || usage
 ;;
-get)
-        if [ -z "$2" ]; then
-            usage
-        fi
-        subCmd get-cmd "$@"
-        ;;
+put) [ -n "$3" ] && subCmd send-cmd "$1" '[["put", "'$2'", '$3', "'$4'"]]' || usage
+;;
+splice)
+        echo splice not implemented, yet
+;;
+get) [ -n "$2" ] && subCmd get-cmd "$@" || usage
+;;
+listen) [ -n "$2" ] && subCmd listen-cmd "$@" || usage
+;;
+removeFirst)
+;;
+removeAll)
+;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 1 -u)"
         exec "$@"
 ;;
-set-cmd)
-        cat <<EOF >&4
-[["set", "$1", $2]]
-EOF
+send-cmd)
+        echo "$*" >&4
+        close
 ;;
 get-cmd)
-        if [ "$2" = -a ]; then
+        if [ "$1" = -a ]; then
             tree=true
             shift
         else
             tree=false
         fi
-        cat <<EOF >&4
-[["value", "$1", null, $tree]]
-EOF
-        showVars
+        echo -n '[' >&4
+        args="$*"
+        prefix=''
+        while [ $# != 0 ]; do
+            echo -n $prefix'["value", "'$1'", null, '$tree']' >&4
+            prefix=", "
+            shift
+        done
+        echo ']' >&4
+        showVars $args
+        close
 ;;
-put)
-;;
-insert)
-;;
-removeFirst)
-;;
-removeAll)
+listen-cmd)
+        if [ "$1" = -m ]; then
+            master='["set", "this/master", true], '
+            shift 2
+        else
+            master=''
+        fi
+        echo -n '['$master'["set", "this/listen", [' >&4
+        prefix=''
+        while [ $# != 0 ]; do
+            echo -n $prefix'"'$1'"' >&4
+            prefix=", "
+            shift
+        done
+        echo ']]]' >&4
+        showBatches
 ;;
 *) usage $0
 ;;

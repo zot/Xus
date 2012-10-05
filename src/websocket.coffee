@@ -25,6 +25,7 @@ class WebSocketConnection extends Connection
     @con.on 'data', (data) => @newData data
     @con.on 'error', (hadError)=> @server.disconnect @
     @con.on 'close', (hadError)=> @server.disconnect @
+    @con.on 'end', (hadError)=> @server.disconnect @
     @server.addConnection @
   connected: true
   write: (str)-> @con.write str

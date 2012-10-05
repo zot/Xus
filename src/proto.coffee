@@ -22,7 +22,7 @@ _ = require './lodash.min'
 # cmds is a list of commands a peer can send
 ####
 
-cmds = ['name', 'value', 'set', 'put', 'splice', 'remove', 'removeFirst', 'removeAll']
+cmds = ['name', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
 
 ####
 # Commands
@@ -67,6 +67,7 @@ error_variable_not_array = 'error_variable_not_array'
 error_bad_connection = 'error_bad_connection'
 error_duplicate_peer_name = 'error_duplicate_peer_name'
 error_private_variable = 'error_private_variable'
+error_bad_master = 'error_bad_master'
 
 ####
 # STORAGE MODES FOR VARIABLES
@@ -128,6 +129,7 @@ exports.Server = class Server
           if isSetter and key is con.listenPath then @newListens = true
           if (@[name] con, msg, msg) and isSetter
             if key == "#{con.peerPath}/name" then @name con, msg[2]
+            else if key == "#{con.peerPath}/master" then @setMaster con
             c.addCmd msg for c in @relevantConnections prefixes key
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
@@ -169,6 +171,7 @@ exports.Server = class Server
       if msg then @error con, errorType, msg
       con.send()
       con.close()
+      if con is @master then process.exit()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
   keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
@@ -214,7 +217,11 @@ exports.Server = class Server
       @renamePeerVars con, con.name, name
       @setConName con, name
       con.addCmd ['name', name]
-    true
+  setMaster: (con)->
+    if @master? then @disconnect con, error_bad_master, "Xus cannot server two masters"
+    else
+      console.log "Setting master: #{con.name}"
+      @master = con
   # Commands
   value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
     if tree then @sendTree con, key, cmd
