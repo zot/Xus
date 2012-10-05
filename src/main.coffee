@@ -5,6 +5,7 @@
 
 exports = module.exports = require './base'
 {startSocketServer} = require './socket'
+{startWebSocketServer} = require './websocket'
 {Server} = exports = require './peer'
 pfs = require './pfs' # my tiny fs promise lib, based on q
 path = require 'path'
@@ -50,19 +51,19 @@ run = ->
         switch args[i]
           when '-s' then socketAddr = args[++i]
           when '-w' then webSocketAddr = args[++i]
-          else eval args[i] ? 'null'
+          when '-e' then require(args[++i]).main()
         i++
-      if webSocketAddr then console.log('webSocket server not implmented, yet')
-      else
-        [host, port] = parseAddr socketAddr || ':'
-        startSocketServer xusServer, host, port, ->
-          console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
-          state.servers[name] = xusServer.socketServer.address()
-          state.servers[name].pid = process.pid
-          pfs.truncate(stateFd, 0)
-            .then(-> pfs.writeFile(stateFd, JSON.stringify state))
-            .then(-> pfs.close(stateFd))
-            .end()
+      [host, port] = parseAddr webSocketAddr || ':'
+      console.log "STARTING WITH WEB SOCKETS"
+      startWebSocketServer xusServer, host, port, ->
+        console.log "Server #{name}: #{require('util').inspect xusServer.socketServer}"
+        console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
+        state.servers[name] = xusServer.socketServer.address()
+        state.servers[name].pid = process.pid
+        pfs.truncate(stateFd, 0)
+          .then(-> pfs.writeFile(stateFd, JSON.stringify state))
+          .then(-> pfs.close(stateFd))
+          .end()
 
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'

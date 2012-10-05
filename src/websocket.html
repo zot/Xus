@@ -1,0 +1,16 @@
+<html>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  var socket = io.connect(location.origin);
+  parent.postMessage({socket: socket}, "*");
+/*
+  socket.on('news', function (data) {
+    console.log(data);
+    socket.emit('my other event', { my: 'data' });
+  });
+*/
+</script>
+<body>
+Hello
+</body>
+</html>

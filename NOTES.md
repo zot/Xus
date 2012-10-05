@@ -2,14 +2,25 @@
 
 * local: In-VM
 * worker: Shared Web Worker
-* Sockets
 * WebSockets
-* Xus Proxy, running through sockets or WebSockets
+* Xus Proxy, running through WebSockets
+
+# Reflect data in different ways
+
+* observed -- changes are broadcast to listeners
+* static -- may shared with your in-VM code
+* computed -- may be computed on access
 
 # Xus command
 
 * list -- display running xuses
 * stop server -- kill a xus
+* get -- get the value of a variable (optionally all of its children)
+* set -- set a variable
+* put -- set a property of a variable's value
+* insert -- insert a value in a variable (if it's an array)
+* removeFirst -- remove first occurrence of a value
+* removeAll -- remove all occurrences of a value
 * run cmd arg... -- run command in the context of a xus
    * cmd's ENV contains connection info for spawned commands
    * cmd's stdin gets listener results from xus

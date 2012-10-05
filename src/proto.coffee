@@ -4,25 +4,25 @@ require './transport'
 _ = require './lodash.min'
 
 ####
-# 
+#
 # The Xus protocol
 #
 # Most of the messages change values for Xus' keys
-# 
+#
 # Standard keys
-# 
+#
 # this/** -- equivalent to peer/PEER_NAME/*
-# 
+#
 # peer/X/listen -- list of paths that peer X is listening to
 # peer/X/name -- the name of the peer (whatever X is)
-# 
+#
 ####
 
 ####
 # cmds is a list of commands a peer can send
 ####
 
-cmds = ['name', 'value', 'set', 'put', 'insert', 'remove', 'removeFirst', 'removeAll']
+cmds = ['name', 'value', 'set', 'put', 'splice', 'remove', 'removeFirst', 'removeAll']
 
 ####
 # Commands
@@ -47,10 +47,10 @@ cmds = ['name', 'value', 'set', 'put', 'insert', 'remove', 'removeFirst', 'remov
 #
 # removeAll key value
 #   remove all occurances of value in the key's array
-# 
+#
 ####
 
-exports.setCmds = setCmds = ['set', 'put', 'insert', 'removeFirst', 'removeAll']
+exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll']
 
 ####
 # ERROR TYPES
@@ -66,6 +66,7 @@ error_variable_not_object = 'error_variable_not_object'
 error_variable_not_array = 'error_variable_not_array'
 error_bad_connection = 'error_bad_connection'
 error_duplicate_peer_name = 'error_duplicate_peer_name'
+error_private_variable = 'error_private_variable'
 
 ####
 # STORAGE MODES FOR VARIABLES
@@ -92,18 +93,21 @@ storageModes = [storage_transient, storage_memory, storage_permanent]
 #   listening: the variables it's listening to
 #   send(): send the message queue to the connection
 #   disconnect(): disconnect the connection
-# 
+#
 ####
 
 exports.Server = class Server
-  connections: []
-  peers: {}
-  values: {}
-  keys: []
   newKeys: false
-  storageModes: {} # keys and their storage modes
   anonymousPeerCount: 0
+  constructor: ->
+    @connections = []
+    @peers = {}
+    @values = {}
+    @keys = []
+    @storageModes = {} # keys and their storage modes
+  createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
   processBatch: (con, batch)->
+    console.log "Server batch: #{JSON.stringify batch}"
     for msg in batch
       @processMsg con, msg, msg
     if @newKeys
@@ -114,39 +118,47 @@ exports.Server = class Server
       @newListens = false
     c.send() for c in @connections
   processMsg: (con, [name, key], msg)->
-    console.log "PROCESS #{msg}"
     if con.isConnected()
       if name in cmds
         isSetter = name in setCmds
-        if typeof key is 'string' then key = msg[1] = key.replace /^this/, "peer/#{con.name}"
-        if isSetter and key is con.listenPath then @newListens = true
-        if (@[name] con, msg, msg) and isSetter
-          console.log "KEY: #{key}, msg: #{JSON.stringify msg}, relevant connections: #{@relevantConnections c, prefixes key}"
-          (console.log "adding #{JSON.stringify msg} to #{c.name}"; c.addCmd msg) for c in @relevantConnections c, prefixes key
-          if @storageModes[key] is storage_permanent then @store con, key, value
+        if typeof key is 'string' then key = msg[1] = key.replace new RegExp('^this/'), "peer/#{con.name}/"
+        if key.match("^peer/") && !key.match("^#{con.peerPath}/") && !key.match("^peer/[^/]+/public")
+          @disconnect con, error_private_variable, "Error, #{con.name} (key = #{key}, peerPath = #{con.peerPath}, match = #{key.match("^#{con.peerPath}")}) attempted to change another peer's private variable: '#{key}' in message: #{JSON.stringify msg}"
+        else
+          if isSetter and key is con.listenPath then @newListens = true
+          if (@[name] con, msg, msg) and isSetter
+            if key == "#{con.peerPath}/name" then @name con, msg[2]
+            c.addCmd msg for c in @relevantConnections prefixes key
+            if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
-  relevantConnections: (con, keyPrefixes)-> _.filter @connections, (c)-> c isnt con && caresAbout c, keyPrefixes
-  addConnection: (con)->
-    con.name = "$anonymous-#{@anonymousPeerCount++}"
-    console.log "ADDED CONNECTION: #{con.name}"
-    con.listening = {}
-    con.peerPath = "peer/#{con.name}"
+  relevantConnections: (keyPrefixes)-> _.filter @connections, (c)-> caresAbout c, keyPrefixes
+  setConName: (con, name)->
+    con.name = name
+    con.peerPath = "peer/#{name}"
     con.listenPath = "#{con.peerPath}/listen"
-    @peers[con.name] = con
+    @peers[name] = con
+    @values["#{con.peerPath}/name"] = name
+  addConnection: (con)->
+    @setConName con, "@anonymous-#{@anonymousPeerCount++}"
+    con.listening = {}
     @connections.push con
     @values[con.listenPath] = []
-    @values["#{con.peerPath}/name"] = con.name
-  renamePeerVars: (oldName, newName)->
-    console.log "old values: #{JSON.stringify @values}"
-    oldPrefix = "peer/#{oldName}"
-    oldPrefixPat = new RegExp "^peer/#{oldName}"
+    con.addCmd ['name', con.name]
+    con.send()
+  renamePeerVars: (con, oldName, newName)->
+    [@keys] = renameVars @keys, @values, oldName, newName
+    newCL = {}
+    newVL = []
     newPrefix = "peer/#{newName}"
-    for key in @keysForPrefix oldPrefix
-      @values[key.replace oldPrefixPat, newPrefix] = @values[key]
-      delete @values[key]
-    console.log "new values: #{JSON.stringify @values}"
+    oldPrefixPat = new RegExp "^peer/#{oldName}(?=/|$)"
+    for l of con.listening
+      l = l.replace oldPrefixPat, newPrefix
+      newCL[l] = true
+      newVL.push l
+    con.listening = newCL
+    newVL.sort()
+    @values["#{newPrefix}/listen"] = newVL
   disconnect: (con, errorType, msg)->
-    console.log "*\n* DISCONNECT: #{msg}\n*"
     idx = @connections.indexOf con
     if idx > -1
       peerKey = "peer/#{con.name}"
@@ -159,14 +171,23 @@ exports.Server = class Server
       con.close()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
+  keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
   setListens: (con)->
+    thisPath = new RegExp "^this/"
+    conPath = "#{con.peerPath}/"
     old = con.listening
     con.listening = {}
-    console.log "Setting listens, name: #{con.name}, old: #{old}, listenPath: #{con.listenPath}, new: #{@values[con.listenPath]}" # con = #{require('util').inspect con}"
+    finalListen = []
     for path in @values[con.listenPath]
+      if path.match("^peer/") and !path.match("^peer/[^/]+/public") and !path.match("^#{con.peerPath}")
+        @disconnect con, error_private_variable, "Error, #{con.name} attempted to listen to a peer's private variables in message: #{JSON.stringify msg}"
+        return
+      path = path.replace thisPath, conPath
+      finalListen.push path
       con.listening[path] = true
       if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', path, null, true]
       old[path] = true
+    @values[con.listenPath] = finalListen
   error: (con, errorType, msg)->
     con.addCmd ['error', errorType, msg]
     false
@@ -175,45 +196,32 @@ exports.Server = class Server
     delete @values[key]
     idx = _.search key, @keys
     if idx > -1 then @keys.splice idx, 1
-  keysForPrefix: (prefix)->
-    keys = []
-    idx = _.search prefix, @keys
-    if idx > -1
-      console.log "Getting all keys for prefix: #{prefix}, start: #{idx}, keys: #{@keys.join ', '}"
-      prefixPattern = "^#{prefix}/"
-      if @values[prefix]? then keys.push prefix
-      (if @values[prefix]? then keys.push @keys[idx]) while @keys[++idx] && @keys[idx].match prefixPattern
-    keys
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    console.log "Keys for #{path} = #{@keysForPrefix path}"
-    console.log "All keys: #{@keys.join ', '}"
     for key in @keysForPrefix path
-      cmd.push key, @values[key]
+      cmd.push key, @getValue @values[key]
     con.addCmd cmd
+  getValue: (value)-> if typeof value == 'function' then value() else value
   # Storage methods -- have to be filled in by storage strategy
   store: (con, key, value)-> # do nothing, for now
     @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
   remove: (con, key)-> # do nothing, for now
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
-  # Commands
-  name: (con, [x, name])->
+  name: (con, name)->
     if !name? then @disconnect con, error_bad_message, "No name given in name message"
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
     else
       delete @peers[con.name]
-      @renamePeerVars con.name, name
-      con.setName name
-      @peers[name] = con
+      @renamePeerVars con, con.name, name
+      @setConName con, name
+      con.addCmd ['name', name]
     true
+  # Commands
   value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
-    console.log "value cmd: #{JSON.stringify cmd}"
     if tree then @sendTree con, key, cmd
     else
-      console.log "not tree"
-      if @values[key]? then cmd.push key, @values[key]
-      console.log "pushing cmd: #{cmd}"
+      if @values[key]? then cmd.push key, @getValue @values[key]
       con.addCmd cmd
-  set: (con, [x, key, value, storageMode])->
+  set: (con, [x, key, value, storageMode], cmd)->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
       if storageMode and storageMode isnt @storageModes[key] and @storageModes[key] is storage_permanent
@@ -223,21 +231,22 @@ exports.Server = class Server
           storageMode = storageMode || storage_memory
           @keys.push key
           @newKeys = true
-          console.log "Added key: #{key}, unsorted keys: #{@keys.join ', '}"
-        console.log "Setting #{key} = #{value}"
         @values[key] = value
       if storageMode then @storageModes[key] = storageMode
+      cmd[2] = value = @getValue value
       true
   put: (con, [x, key, value, index])->
     if !@values[key] || typeof @values[key] != 'object' then @disconnect con, error_variable_not_object, "Can't put with #{key} because it is not an object"
     else
       @values[key][index] = value
       true
-  insert: (con, [x, key, value, index])->
+  splice: (con, [x, key, index, del], cmd)->
+    # CHANGE THIS TO SPLICE
     if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
     else
-      if index < 0 then index = @values.length + index + 1
-      @values[key].splice index, 0, value
+      args = cmd.slice 2
+      if index < 0 then args[0] = @values[key].length + index + 1
+      @values[key].splice args...
       true
   removeFirst: (con, [x, key, value])->
     if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
@@ -253,12 +262,32 @@ exports.Server = class Server
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       true
 
-caresAbout = (con, keyPrefixes)->
-  result = _.any keyPrefixes, (p)->con.listening[p]
-  console.log "con #{con.name} #{if result then 'cares about' else 'does not care about'} #{keyPrefixes}, listen: #{JSON.stringify con.listening}"
-  result
+exports.renameVars = renameVars = (keys, values, oldName, newName)->
+  oldPrefix = "peer/#{oldName}"
+  newPrefix = "peer/#{newName}"
+  oldPrefixPat = new RegExp "^#{oldPrefix}(?=/|$)"
+  trans = {}
+  for key in keysForPrefix keys, values, oldPrefix
+    newKey = key.replace oldPrefixPat, newPrefix
+    values[newKey] = values[key]
+    trans[key] = newKey
+    delete values[key]
+  keys = (k for k of values)
+  keys.sort()
+  [keys, trans]
 
-prefixes = (key)->
+keysForPrefix = (keys, values, prefix)->
+  keys = []
+  idx = _.search prefix, keys
+  if idx > -1
+    prefixPattern = "^#{prefix}/"
+    if values[prefix]? then keys.push prefix
+    (if values[prefix]? then keys.push keys[idx]) while keys[++idx] && keys[idx].match prefixPattern
+  keys
+
+caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p]
+
+exports.prefixes = prefixes = (key)->
   result = []
   splitKey = _.without (key.split '/'), ''
   while splitKey.length

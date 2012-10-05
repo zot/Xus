@@ -23,9 +23,7 @@ class SocketConnection extends Connection
     @con.on 'close', (hadError)=> @server.disconnect @
     @server.addConnection @
   connected: true
-  write: (str)->
-    console.log "CONNECTION WRITING: #{str}"
-    @con.write str
+  write: (str)-> @con.write str
   basicClose: ->
     try
       @con.destroy()

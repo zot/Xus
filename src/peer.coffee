@@ -1,5 +1,7 @@
 exports = module.exports = require './base'
 {setCmds, prefixes} = require './proto'
+_ = require './lodash.min'
+{inspect} = require 'util'
 
 exports.Peer = class Peer
   constructor: (@con)->
@@ -14,35 +16,35 @@ exports.Peer = class Peer
     block()
     @inTransaction = false
     @con.send()
-  listen: (key, simualateSetsForTree, callback)->
+  listen: (key, simulateSetsForTree, callback)->
+    if @peerName? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@peerName}"
     if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
     if !@changeListeners[key]
       @changeListeners[key] = []
-      @insert "this/listen", key, -1
-      @grabTree key, (msg, batch)->
-        if simulateSetsForTree then sendTreeSets msg, callback
-        else callback null, null, msg, batch
-        @changeListeners[key].push = callback
+      @grabTree key, (msg)=>
+        if simulateSetsForTree then @sendTreeSets @setsForTree(msg), callback
+        else callback key, (if msg[4] is key then msg[5] else null), null, msg, batch
+        @changeListeners[key].push callback
+      @splice "this/listen", -1, 0, key
     else @tree key, simulateSetsForTree, callback
+  name: (n)-> @addCmd ['name', n]
   value: (key, cookie, isTree, callback)->
     @grabTree key, callback
-    @addCmd ['tree', key, cookie, isTree]
+    @addCmd ['value', key, cookie, isTree]
   set: (key, value)-> @addCmd ['set', key, value]
   put: (key, index, value)-> @addCmd ['put', key, value, index]
-  insert: (key, value, index)-> @addCmd ['insert', key, value, index]
+  splice: (key, spliceArgs...)-> @addCmd ['splice', key, spliceArgs...]
   removeFirst: (key, value)-> @addCmd ['removeFirst', key, value]
   removeAll: (key, value)-> @addCmd ['removeAll', key, value]
   # INTERNAL API
   processBatch: (con, batch)->
-    console.log "PEER GOT BATCH: #{batch}"
-    newKeys = false
+    console.log "Peer batch: #{JSON.stringify batch}"
+    numKeys = @keys.length
     for cmd in batch
       [name, key, value, index] = cmd
       oldValue = name in setCmds && @values[key]
       switch name
-        when 'error'
-          [name, type, msg] = cmd
-          console.log msg
+        when 'name' then @rename key
         when 'set' then @values[key] = value
         when 'put' then @values[key][index] = value
         when 'insert'
@@ -52,14 +54,41 @@ exports.Peer = class Peer
           idx = @values[key].indexOf value
           if idx > -1 then @values[key] = @values[key].splice(index, 1)
         when 'removeAll' then @values[key] = _.without @values[key], value
-        when 'value' then if @treeListeners[key] then cb cmd, batch for cb in @treeListeners[key]
+        when 'value'
+          for k, i in cmd[4..] by 2
+            if !@values[k]? then @keys.push k
+            @values[k] = cmd[i]
+        when 'error'
+          [name, type, msg] = cmd
+          console.log msg
       if name in setCmds
         block(key, @values[key], oldValue, cmd, batch) for block in @listenersFor key
-        if !oldValue
-          newKeys = true
-          @keys.push key
-    if newKeys then sort @keys
+        if !oldValue then @keys.push key
+      else if name == 'value' && @treeListeners[key]
+        cb cmd, batch for cb in @treeListeners[key]
+        delete @treeListeners[key]
+    if numKeys != @keys.length then @keys.sort()
   # PRIVATE
+  rename: (newName)->
+    newPath = "peer/#{newName}"
+    thisPat = new RegExp "^this(?=/|$)"
+    oldName = @peerName ? 'this'
+    @peerName = newName
+    exports.renameVars @keys, @values, oldName, newName
+    t = {}
+    for k, v of @treeListeners
+      t[k.replace thisPat, newPath] = v
+    @treeListeners = t
+    c = {}
+    for k, v of @changeListeners
+      c[k.replace thisPat, newPath] = v
+    @changeListeners = c
+    listen = "peer/#{newName}/listen"
+    if @values[listen]
+      oldPat = new RegExp "^peer/#{oldName}(?=/|$)"
+      @values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
+  showValues: ->
+    console.log "*** treeListeners: #{inspect @treeListeners}\n*** changeListeners: #{inspect @changeListeners}\n*** values: #{inspect @values}\n*** keys: #{inspect @keys}"
   sendTreeSets: (sets, callback)->
     for msg in sets
       [x, k, v] = msg
@@ -76,14 +105,13 @@ exports.Peer = class Peer
       while @keys[idx].match prefix
         msg.push @keys[idx], @values[@keys[idx]]
       callback null, null, null, msg, [msg]
-  setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg by 2
+  setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg[4..] by 2
   grabTree: (key, callback)->
+    if @peerName then key = key.replace new RegExp("^this(?=/|$)"), "peer/@peerName"
     if !@treeListeners[key] then @treeListeners[key] = []
     @treeListeners[key].push callback
   addCmd: (cmd)->
-    if @inTransaction then @con.addCmd cmd
-    else
-      @con.addCmd cmd
-      @con.send()
+    @con.addCmd cmd
+    if !@inTransaction then @con.send()
   disconnect: -> @con.close()
-  listenersFor: (key)-> _.flatten prefixes(key), (k)->@changeListeners[k] || []
+  listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []

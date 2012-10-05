@@ -8,17 +8,18 @@ usage() {
     cat <<EOF
 $(basename $1) <command> [<options>]
 
-$(basename $1) list
-$(basename $1) start <name> [expr ...] -- start a xus instance, runs optional exprs before starting
-$(basename $1) stop <name> -- stop a xus instance
-$(basename $1) run <name> <command> [<arg>...] -- run command in context of named xus instance
-$(basename $1) clean <name> | -a -- delete status information for xus instance or all of them
-$(basename $1) get [-a] <name> <key> -- get a value, -a means include children
-$(basename $1) set <name> <key> <value> -- set a value
-$(basename $1) put <name> <key> <index> <value> -- set the value of a key in a variable
-$(basename $1) insert <name> <key> <index> <value> -- insert a value into an array
-$(basename $1) removeFirst <name> <key> <index> -- remove a value from an array
-$(basename $1) removeAll <name> <key> <index> -- remove all occurrances of a value from an array
+COMMANDS
+list
+start <name> [-s <addr>] [-e <expr>]...    start a xus instance
+stop <name>                                stop a xus instance
+run <name> <command> [<arg>]...            run command in context of named xus instance
+clean <name> | -a                          clear info for one or all xus instances
+get [-a] <name> <key>                      get a value, -a means include children
+set <name> <key> <value>                   set a value
+put <name> <key> <index> <value>           set the value of a key in a variable
+insert <name> <key> <index> <value>        insert a value into an array
+removeFirst <name> <key> <value>           remove first occurrence of value from array
+removeAll <name> <key> <value>             remove all occurrences of value from array
 EOF
     exit 1
 }
@@ -51,7 +52,7 @@ getPort() {
 }
 
 showVars() {
-    read line
+    read line <&3
     if [ -n "$line" ]; then
         line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
         while [ $(echo $line | jshon -l) != 0 ]; do
@@ -78,6 +79,35 @@ inc() {
             line=$(echo $line | jshon -d 0)
         done
     fi
+}
+
+wsConnect() {
+    echo -e 'GET /cmd HTTP/1.1\r' >&4
+    echo -e 'Upgrade: socket\r' >&4
+    echo -e 'Connection: Upgrade\r' >&4
+    echo -e '\r' >&4
+    read line <&3
+    echo $line
+}
+
+runCmd() {
+    if [ ! -e $STATE ]; then
+        echo $1 is not running.
+        exit
+    fi
+    export XUS_SERVER="$1"
+    export XUS_PORT=$(getPort "$1")
+    if [ -n "$XUS_PORT" ]; then
+        shift
+        socat TCP:localhost:$XUS_PORT "EXEC:$*,nofork,fdin=3,fdout=4"
+    fi
+}
+
+subCmd() {
+    cmd="$1"
+    server="$2"
+    shift 2
+    runCmd $server "$0" chain-ws "$0" "$cmd" "$@"
 }
 
 cmd="$1"
@@ -127,49 +157,44 @@ clean)
 run)
         if [ -z "$2" ]; then
             usage
-        elif [ ! -e $STATE ]; then
-            echo $1 is not running.
-            exit
         fi
-        port=$(getPort "$1")
-        if [ -n "$port" ]; then
-            shift
-            socat TCP:localhost:$port "EXEC:$*,fdin=3,fdout=4"
-        fi
+        server="$1"
+        shift
+        runCmd $server "$0" chain-ws "$@"
 ;;
 set)
         if [ -z "$3" ]; then
             usage
         fi
-        port=$(getPort "$1")
-        if [ -n "$port" ]; then
-            cat <<EOF | socat - TCP:localhost:$port
-[["set", "$2", $3]]
-EOF
-        fi
+        subCmd set-cmd "$@"
 ;;
 get)
         if [ -z "$2" ]; then
             usage
         fi
-        port=$(getPort "$1")
-        if [ -n "$port" ]; then
-            cat <<EOF | socat - TCP:localhost:$port | showVars
-[["value", null, false, "$2"]]
-EOF
-        fi
-;;
-tree)
-        if [ -z "$2" ]; then
-            usage
-        fi
-        port=$(getPort "$1")
-        if [ -n "$port" ]; then
-            cat <<EOF | socat - TCP:localhost:$port | showVars
-[["value", null, true, "$2"]]
-EOF
-        fi
+        subCmd get-cmd "$@"
         ;;
+chain-ws)
+        export XUS_PEER="$(wsConnect | jshon -e 0 -e 1 -u)"
+        exec "$@"
+;;
+set-cmd)
+        cat <<EOF >&4
+[["set", "$1", $2]]
+EOF
+;;
+get-cmd)
+        if [ "$2" = -a ]; then
+            tree=true
+            shift
+        else
+            tree=false
+        fi
+        cat <<EOF >&4
+[["value", "$1", null, $tree]]
+EOF
+        showVars
+;;
 put)
 ;;
 insert)
