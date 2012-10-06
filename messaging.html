@@ -6,15 +6,25 @@
 
   window.common = {};
   function prep() {
+    trySocket();
+  }
+  function useIframe() {
     frame = document.getElementById('con')
     frame.contentWindow.common = {};
     frame.src = document.location.hash.substring(1)
     window.onmessage = function(evt) {
       console.log("Got socket: " + common.sock)
-      common.sock.onopen = function() {
-        common.sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
-      }
+      configSocket(common.sock);
     }
+  }
+  function configSocet(sock) {
+    sock.onopen = function() {
+      sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
+    }
+  }
+  function trySocket() {
+    if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
+    configSocket(new WebSocket("ws://" + document.location.hash.substring(1)));
   }
 </script>
 </head>
