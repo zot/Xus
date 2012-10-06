@@ -17,7 +17,7 @@
       configSocket(common.sock);
     }
   }
-  function configSocet(sock) {
+  function configSocket(sock) {
     sock.onopen = function() {
       sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
     }
