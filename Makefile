@@ -1,7 +1,7 @@
 SRC=transport proto browser peer base
 EXAMPLES=echo computed
 CMD=main pfs websocket socket proxy
-JS=$(SRC:%=lib/%.js) lib/websocket-html.js
+JS=$(SRC:%=lib/%.js)
 CMD_JS=$(CMD:%=lib/%.js)
 EX_JS=$(EXAMPLES:%=lib/%.js)
 ALL_JS=$(JS) $(CMD_JS) $(EX_JS)
@@ -26,10 +26,6 @@ clean: FRC
 	rm -f $(JS) $(CMD_JS) $(EX_JS)
 
 FRC:
-
-lib/websocket-html.js: src/websocket.html
-	echo -n "module.exports = " > $@
-	jshon -Q -s "`cat src/websocket.html`" >> $@
 
 lib/%.js: src/%.coffee
 	node_modules/coffee-script/bin/coffee -o lib -c $<

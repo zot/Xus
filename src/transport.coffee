@@ -24,7 +24,8 @@ exports.JSONCodec = JSONCodec =
   send: (con, obj)->
     con.write "#{JSON.stringify(obj)}\n"
   newData: (con, data)->
-    msgs = (con.saved + data).split('\n')
+    if typeof data != 'string' then data = data.toString()
+    msgs = (con.saved + data).trim().split('\n')
     con.saved = if data[data.length - 1] is '\n' then '' else msgs.pop()
     con.processBatch batch for batch in _.map msgs, (m)->
       try
@@ -69,6 +70,7 @@ exports.Connection = class Connection
   addCmd: (cmd)-> @q.push cmd
   send: ->
     if @connected && @q.length
+      if @master.verbose then console.log "SENDING #{@name}, #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @codec.send @, q
   newData: (data)-> @codec.newData @, data
@@ -81,7 +83,7 @@ exports.Connection = class Connection
 ####
 
 exports.createDirectPeer = (xus, peerFactory)->
-  ctx = connected: true
+  ctx = connected: true, server: xus
   # the object that xus uses as its connection
   xusConnection = new DirectConnectionPart
   # the object that the peer uses as its connection
@@ -102,5 +104,6 @@ class DirectConnectionPart
   addCmd: (cmd)-> @q.push cmd
   send: ->
     if @ctx.connected && @q.length
+      if @ctx.server.verbose then console.log "SENDING #{@name}, #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @otherMaster.processBatch @otherConnection, q

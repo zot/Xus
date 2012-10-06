@@ -98,6 +98,7 @@ storageModes = [storage_transient, storage_memory, storage_permanent]
 ####
 
 exports.Server = class Server
+  verbose: false
   newKeys: false
   anonymousPeerCount: 0
   constructor: ->
@@ -108,7 +109,7 @@ exports.Server = class Server
     @storageModes = {} # keys and their storage modes
   createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
   processBatch: (con, batch)->
-    console.log "Server batch: #{JSON.stringify batch}"
+    if @verbose then console.log "RECEIVED #{JSON.stringify batch}"
     for msg in batch
       @processMsg con, msg, msg
     if @newKeys

@@ -4,7 +4,6 @@
 ####
 
 exports = module.exports = require './base'
-{startSocketServer} = require './socket'
 {startWebSocketServer} = require './websocket'
 {Server} = exports = require './peer'
 pfs = require './pfs' # my tiny fs promise lib, based on q
@@ -32,7 +31,6 @@ setup = (cont)->
     console.log "Error: #{err.stack}"
 
 run = ->
-  console.log "ARGS: #{process.argv.join(' ')}"
   setup (s)->
     socketAddr = null
     webSocketAddr = null
@@ -48,19 +46,19 @@ run = ->
       exports.xusServer = xusServer = new Server()
       cmd = null
       while i < args.length
-        console.log "arg #{i}: #{args[i]}"
         switch args[i]
           when '-s' then socketAddr = args[++i]
           when '-w' then webSocketAddr = args[++i]
           when '-e' then require(args[++i]).main()
           when '-x' then cmd = args[++i]
+          when '-v' then xusServer.verbose = true
         i++
       [host, port] = parseAddr webSocketAddr || ':'
-      console.log "STARTING WITH WEB SOCKETS"
       startWebSocketServer xusServer, host, port, ->
-        console.log "Server #{name}: #{require('util').inspect xusServer.socketServer}"
-        console.log "Server #{name} started on port: #{xusServer.socketServer.address().port}"
-        state.servers[name] = xusServer.socketServer.address()
+        console.log "Server #{name} started on port: #{xusServer.webSocketServer.address().port}"
+        process.env.XUS_SERVER = name
+        process.env.XUS_PORT = xusServer.webSocketServer.address().port
+        state.servers[name] = xusServer.webSocketServer.address()
         state.servers[name].pid = process.pid
         pfs.truncate(stateFd, 0)
           .then(-> pfs.writeFile(stateFd, JSON.stringify state))

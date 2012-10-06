@@ -706,6 +706,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
   exports.Server = Server = (function() {
 
+    Server.prototype.verbose = false;
+
     Server.prototype.newKeys = false;
 
     Server.prototype.anonymousPeerCount = 0;
@@ -724,7 +726,9 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
     Server.prototype.processBatch = function(con, batch) {
       var c, msg, _i, _j, _len, _len1, _ref, _results;
-      console.log("Server batch: " + (JSON.stringify(batch)));
+      if (this.verbose) {
+        console.log("RECEIVED " + (JSON.stringify(batch)));
+      }
       for (_i = 0, _len = batch.length; _i < _len; _i++) {
         msg = batch[_i];
         this.processMsg(con, msg, msg);
@@ -1146,7 +1150,10 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
     },
     newData: function(con, data) {
       var batch, msgs, _i, _len, _ref, _results;
-      msgs = (con.saved + data).split('\n');
+      if (typeof data !== 'string') {
+        data = data.toString();
+      }
+      msgs = (con.saved + data).trim().split('\n');
       con.saved = data[data.length - 1] === '\n' ? '' : msgs.pop();
       _ref = _.map(msgs, function(m) {
         try {
@@ -1203,6 +1210,9 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
     Connection.prototype.send = function() {
       var q, _ref;
       if (this.connected && this.q.length) {
+        if (this.master.verbose) {
+          console.log("SENDING " + this.name + ", " + (JSON.stringify(this.q)));
+        }
         _ref = [this.q, []], q = _ref[0], this.q = _ref[1];
         return this.codec.send(this, q);
       }
@@ -1223,7 +1233,8 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
   exports.createDirectPeer = function(xus, peerFactory) {
     var ctx, peer, peerConnection, xusConnection;
     ctx = {
-      connected: true
+      connected: true,
+      server: xus
     };
     xusConnection = new DirectConnectionPart;
     peerConnection = new DirectConnectionPart;
@@ -1262,6 +1273,9 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
     DirectConnectionPart.prototype.send = function() {
       var q, _ref;
       if (this.ctx.connected && this.q.length) {
+        if (this.ctx.server.verbose) {
+          console.log("SENDING " + this.name + ", " + (JSON.stringify(this.q)));
+        }
         _ref = [this.q, []], q = _ref[0], this.q = _ref[1];
         return this.otherMaster.processBatch(this.otherConnection, q);
       }

@@ -1,0 +1,18 @@
+<html>
+<head>
+<script>
+  var sock;
+
+  function prep() {
+    if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
+    sock = new WebSocket(document.location.hash.substring(1));
+    document.location.hash = '';
+    sock.onopen = function() {
+      sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
+    }
+  }
+</script>
+</head>
+<body onload="prep()">
+</body>
+</html>
