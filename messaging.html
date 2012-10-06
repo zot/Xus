@@ -2,33 +2,17 @@
 <head>
 <script>
   var sock;
-  var frame;
 
-  window.common = {};
   function prep() {
-    trySocket();
-  }
-  function useIframe() {
-    frame = document.getElementById('con')
-    frame.contentWindow.common = {};
-    frame.src = document.location.hash.substring(1)
-    window.onmessage = function(evt) {
-      console.log("Got socket: " + common.sock)
-      configSocket(common.sock);
-    }
-  }
-  function configSocket(sock) {
+    if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
+    sock = new WebSocket(document.location.hash.substring(1));
+    document.location.hash = '';
     sock.onopen = function() {
       sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
     }
   }
-  function trySocket() {
-    if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
-    configSocket(new WebSocket("ws://" + document.location.hash.substring(1)));
-  }
 </script>
 </head>
 <body onload="prep()">
-  <iframe id="con" style="position: absolute; top: -100000"></iframe>
 </body>
 </html>
