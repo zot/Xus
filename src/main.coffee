@@ -32,39 +32,46 @@ setup = (cont)->
 
 run = ->
   setup (s)->
-    socketAddr = null
-    webSocketAddr = null
+    config =
+      proxy:false
+      verbose: false
+      addr: null
+      cmd: null
     state = (s && JSON.parse(s)) || {servers: {}}
     i = 2
     args = process.argv
     if i > args.length then usage args
-    name = args[1] # name required -- only one instance per name allowed
-    if state.servers[name]
-      console.log "Error: there is already a server named #{name}"
+    config.name = args[1] # name required -- only one instance per name allowed
+    if state.servers[config.name]
+      console.log "Error: there is already a server named #{config.name}"
       process.exit(2)
     else
-      exports.xusServer = xusServer = new Server()
-      cmd = null
       while i < args.length
         switch args[i]
-          when '-s' then socketAddr = args[++i]
-          when '-w' then webSocketAddr = args[++i]
+          when '-w' then config.addr = args[++i]
           when '-e' then require(args[++i]).main()
-          when '-x' then cmd = args[++i]
-          when '-v' then xusServer.verbose = true
+          when '-x' then config.cmd = args[++i]
+          when '-v' then config.verbose = true
+          when '-p' then config.proxy = true
         i++
-      [host, port] = parseAddr webSocketAddr || ':'
-      startWebSocketServer xusServer, host, port, ->
-        console.log "Server #{name} started on port: #{xusServer.webSocketServer.address().port}"
-        process.env.XUS_SERVER = name
-        process.env.XUS_PORT = xusServer.webSocketServer.address().port
-        state.servers[name] = xusServer.webSocketServer.address()
-        state.servers[name].pid = process.pid
+      [config.host, config.port] = parseAddr config.addr || ':'
+      httpServer = startWebSocketServer config.host, config.port, ->
+        console.log "Server #{config.name} started on port: #{httpServer.address().port}"
+        process.env.XUS_SERVER = config.name
+        process.env.XUS_PORT = httpServer.address().port
+        state.servers[config.name] = httpServer.address()
+        state.servers[config.name].pid = process.pid
         pfs.truncate(stateFd, 0)
           .then(-> pfs.writeFile(stateFd, JSON.stringify state))
           .then(-> pfs.close(stateFd))
-          .then(-> if cmd? then require('child_process').spawn('/bin/sh', ['-c', cmd], {stdio: ['ignore', 1, 2]}) else 1)
+          .then(-> if config.cmd? then require('child_process').spawn('/bin/sh', ['-c', config.cmd], {stdio: ['ignore', 1, 2]}) else 1)
           .end()
+      (if config.proxy then startProxy else startXus) config, httpServer
+
+startXus = (config, httpServer)->
+  exports.xusServer = xusServer = new Server()
+  xusServer.verbose = config.verbose
+  exports.connectXus xusServer, httpServer
 
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'

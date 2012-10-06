@@ -5,15 +5,11 @@ _ = require './lodash.min'
 pfs = require './pfs'
 path = require 'path'
 
-exports.startWebSocketServer = (xusServer, host, port, ready)->
+exports.startWebSocketServer = (host, port, ready)->
   app = require('http').createServer handler
-  context = connections: []
-  xusServer.webSocketServer = app
-  wServer = new ws.Server noServer: true
-  app.on 'upgrade', (req, socket, head)->
-    new (req.url.match('^/cmd') && SimpleCon || StandardCon) xusServer, context, socket, head, wServer, req
   if port then app.listen port, host, ready
   else app.listen ready
+  app
 
 handler = (req, res)->
   pfx = new RegExp '^/file/'
@@ -25,6 +21,13 @@ handler = (req, res)->
         res.writeHead 200
         res.end s)
       .end()
+
+exports.connectXus = (xusServer, httpServer)->
+  context = connections: []
+  xusServer.webSocketServer = httpServer
+  wServer = new ws.Server noServer: true
+  httpServer.on 'upgrade', (req, socket, head)->
+    new (req.url.match('^/cmd') && SimpleCon || StandardCon) xusServer, context, socket, head, wServer, req
 
 class SimpleCon extends Connection
   constructor: (@server, @context, @con, data)->
