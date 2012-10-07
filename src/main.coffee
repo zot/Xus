@@ -3,7 +3,7 @@
 # License: ZLIB license
 ####
 
-exports = module.exports = require './base'
+{log} = exports = module.exports = require './base'
 {startWebSocketServer} = require './websocket'
 {Server} = exports = require './peer'
 pfs = require './pfs' # my tiny fs promise lib, based on q
@@ -34,7 +34,7 @@ run = ->
   setup (s)->
     config =
       proxy:false
-      verbose: false
+      verbose: ->
       addr: null
       cmd: null
     state = (s && JSON.parse(s)) || {servers: {}}
@@ -51,7 +51,7 @@ run = ->
           when '-w' then config.addr = args[++i]
           when '-e' then require(args[++i]).main()
           when '-x' then config.cmd = args[++i]
-          when '-v' then config.verbose = true
+          when '-v' then config.verbose = log
           when '-p' then config.proxy = true
         i++
       [config.host, config.port] = parseAddr config.addr || ':'

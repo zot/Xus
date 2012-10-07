@@ -1,11 +1,12 @@
-exports = module.exports = require './base'
+window.xus = exports = module.exports = require './base'
 require './proto'
-require './transport'
+{log, ProxyMux, WebSocketConnection} = require './transport'
 _ = require './lodash.min'
 
 if window.MozWebSocket then window.WebSocket = window.MozWebSocket
 
 exports.xusToProxy = (xus, url)->
-  proxy = new ProxyMux (con, batch)-> xus.processBatch con, batch
+  proxy = new ProxyMux xus
+  proxy.verbose = log
   sock = new WebSocket url
-  sock.onopen = -> proxy.newXusEndpoint xus, (proxyCon)-> new WebSocketConnection proxyCon, sock
+  sock.onopen = -> new WebSocketConnection proxy, sock

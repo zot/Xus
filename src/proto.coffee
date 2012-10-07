@@ -98,7 +98,7 @@ storageModes = [storage_transient, storage_memory, storage_permanent]
 ####
 
 exports.Server = class Server
-  verbose: false
+  verbose: ->
   newKeys: false
   anonymousPeerCount: 0
   constructor: ->
@@ -109,7 +109,7 @@ exports.Server = class Server
     @storageModes = {} # keys and their storage modes
   createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
   processBatch: (con, batch)->
-    if @verbose then console.log "RECEIVED #{JSON.stringify batch}"
+    @verbose "RECEIVED #{JSON.stringify batch}"
     for msg in batch
       @processMsg con, msg, msg
     if @newKeys
@@ -120,6 +120,7 @@ exports.Server = class Server
       @newListens = false
     c.send() for c in @connections
   processMsg: (con, [name, key], msg)->
+    @verbose "Xus add connection"
     if con.isConnected()
       if name in cmds
         isSetter = name in setCmds
@@ -142,6 +143,7 @@ exports.Server = class Server
     @peers[name] = con
     @values["#{con.peerPath}/name"] = name
   addConnection: (con)->
+    @verbose "Xus add connection"
     @setConName con, "@anonymous-#{@anonymousPeerCount++}"
     con.listening = {}
     @connections.push con

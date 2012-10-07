@@ -2,16 +2,10 @@
 <head>
 <script src="/xus.js"></script>
 <script>
-  var sock;
-
-  function prep() {}
-  function prepX() {
+  function prep() {
     if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
-    sock = new WebSocket(document.location.hash.substring(1));
-    document.location.hash = '';
-    sock.onopen = function() {
-      sock.send(JSON.stringify([['set', 'x', 3]]) + '\n');
-    }
+    xusServer = new xus.Server();
+    xus.xusToProxy(xusServer, document.location.hash.substring(1));
   }
 </script>
 </head>

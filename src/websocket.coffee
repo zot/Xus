@@ -42,9 +42,11 @@ exports.connectXus = (xusServer, httpServer)->
     else con.destroy()
 
 exports.connectProxy = (httpServer)->
-  proxy = new ProxyMux (con, demuxedBatch)-> con.send(demuxedBatch)
+  proxy = new ProxyMux
+    processBatch: (con, demuxedBatch)-> proxy.verbose "proxy sending: #{JSON.stringify demuxedBatch} to #{con.constructor.name}"; con.send demuxedBatch
   wServer = new ws.Server noServer: true
   httpServer.on 'upgrade', (req, socket, head)->
+    proxy.verbose "REQUEST: #{req.url}"
     if req.url == '/cmd' # proxy this new connection from a peer
       proxy.newSocketEndpoint (proxyCon)-> new SocketConnection proxyCon, socket, head
     else if req.url == '/proxy' # main connection from a Xus server
