@@ -1,7 +1,6 @@
 exports = module.exports = require './base'
 {setCmds, prefixes} = require './proto'
 _ = require './lodash.min'
-{inspect} = require 'util'
 
 exports.Peer = class Peer
   constructor: (@con)->
@@ -87,8 +86,6 @@ exports.Peer = class Peer
     if @values[listen]
       oldPat = new RegExp "^peer/#{oldName}(?=/|$)"
       @values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
-  showValues: ->
-    console.log "*** treeListeners: #{inspect @treeListeners}\n*** changeListeners: #{inspect @changeListeners}\n*** values: #{inspect @values}\n*** keys: #{inspect @keys}"
   sendTreeSets: (sets, callback)->
     for msg in sets
       [x, k, v] = msg

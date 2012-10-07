@@ -73,6 +73,10 @@ startXus = (config, httpServer)->
   xusServer.verbose = config.verbose
   exports.connectXus xusServer, httpServer
 
+startProxy = (config, httpServer)->
+  proxy = exports.connectProxy httpServer
+  proxy.verbose = config.verbose
+
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'
   if parts.length > 2 then throw new Error "Bad address format, expected [host:]port, but got #{addr}"

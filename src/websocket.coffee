@@ -1,5 +1,5 @@
 exports = module.exports = require './base'
-{Connection} = require './transport'
+{ProxyMux, SocketConnection, WebSocketConnection, Connection} = require './transport'
 ws = require 'ws'
 _ = require './lodash.min'
 pfs = require './pfs'
@@ -11,55 +11,43 @@ exports.startWebSocketServer = (host, port, ready)->
   else app.listen ready
   app
 
+fileDir = "#{path.resolve path.dirname path.dirname process.argv[1]}/examples/"
+xusPath = "#{path.resolve path.dirname path.dirname process.argv[1]}/xus.js"
+
 handler = (req, res)->
   pfx = new RegExp '^/file/'
-  if req.url.match pfx
-    file = req.url.replace pfx, "#{path.resolve path.dirname path.dirname process.argv[1]}/html/"
-    pfs.open(file, 'r')
-      .then((fd)-> pfs.readFile fd)
-      .then((s)->
-        res.writeHead 200
-        res.end s)
-      .end()
+  if req.url.match(pfx) || req.url == '/xus.js'
+    file = if req.url == '/xus.js' then xusPath else path.resolve req.url.replace(pfx, fileDir)
+    if file.match("^#{fileDir}") or file == xusPath
+      pfs.open(file, 'r')
+        .then((fd)-> pfs.readFile fd)
+        .then((s)->
+          res.writeHead 200
+          res.end s)
+        .fail(-> badPage req, res)
+        .end()
+      return
+  badPage req, res
+
+badPage = (req, res)->
+  res.writeHead 404
+  res.end "<html><body>Web page #{req.url} not available</body></html>"
 
 exports.connectXus = (xusServer, httpServer)->
-  context = connections: []
   xusServer.webSocketServer = httpServer
   wServer = new ws.Server noServer: true
   httpServer.on 'upgrade', (req, socket, head)->
-    new (req.url.match('^/cmd') && SimpleCon || StandardCon) xusServer, context, socket, head, wServer, req
+    if req.url == '/cmd' then new SocketConnection xusServer, socket, head
+    else if req.url == '/peer' then wServer.handleUpgrade req, socket, head, (con)-> new WebSocketConnection xusServer, con
+    else con.destroy()
 
-class SimpleCon extends Connection
-  constructor: (@server, @context, @con, data)->
-    super @server, null, data.toString()
-    @con.on 'data', (data) => @newData data
-    @con.on 'end', (hadError)=> @server.disconnect @
-    @con.on 'close', (hadError)=> @server.disconnect @
-    @con.on 'error', (hadError)=> @server.disconnect @
-    @server.addConnection @
-  connected: true
-  write: (str)-> @con.write str
-  basicClose: ->
-    try
-      @con.end()
-    catch err
-      console.log "Error closing connection: #{err.stack}"
-    @context.connections = _.without @context.connections, @con
-
-class StandardCon extends Connection
-  constructor: (@server, @context, sock, data, wServer, req)->
-    super @server
-    wServer.handleUpgrade req, sock, data, (@con)=>
-      @con.on 'message', (data) => @newData data
-      @con.on 'end', (hadError)=> @server.disconnect @
-      @con.on 'close', (hadError)=> @server.disconnect @
-      @con.on 'error', (hadError)=> @server.disconnect @
-      @server.addConnection @
-  connected: true
-  write: (str)-> @con.send str
-  basicClose: ->
-    try
-      @con.terminate()
-    catch err
-      console.log "Error closing connection: #{err.stack}"
-    @context.connections = _.without @context.connections, @con
+exports.connectProxy = (httpServer)->
+  proxy = new ProxyMux (con, demuxedBatch)-> con.send(demuxedBatch)
+  wServer = new ws.Server noServer: true
+  httpServer.on 'upgrade', (req, socket, head)->
+    if req.url == '/cmd' # proxy this new connection from a peer
+      proxy.newSocketEndpoint (proxyCon)-> new SocketConnection proxyCon, socket, head
+    else if req.url == '/proxy' # main connection from a Xus server
+      wServer.handleUpgrade req, socket, head, (con)-> new WebSocketConnection proxy, con
+    else con.destroy()
+  proxy
