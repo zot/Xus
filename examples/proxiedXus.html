@@ -4,9 +4,9 @@
 <script>
   function prep() {
     if (window.MozWebSocket) window.WebSocket = window.MozWebSocket;
-    xusServer = new xus.Server();
-    peer = xus.createDirectPeer(xusServer)
-    xus.xusToProxy(xusServer, document.location.hash.substring(1), true);
+    xusServer = new Xus.Server();
+    peer = Xus.createDirectPeer(xusServer)
+    Xus.xusToProxy(xusServer, document.location.hash.substring(1));
     peer.listen('x', true, function (key, value){setX(value)});
   }
   function setX(value) {

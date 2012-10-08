@@ -707,6 +707,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       x = _arg[0], key = _arg[1], value = _arg[2], storageMode = _arg[3];
       if (storageMode && storageModes.indexOf(storageMode) === -1) {
         return this.error(con, error_bad_storage_mode, "" + storageMode + " is not a valid storage mode");
+      } else if (this.values[key] === value) {
+        return false;
       } else {
         if (storageMode && storageMode !== this.storageModes[key] && this.storageModes[key] === storage_permanent) {
           this.remove(con, key);
@@ -1101,6 +1103,7 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
       var con, id;
       id = this.currentId++;
       con = factory(id);
+      this.verbose("proxy got new connection: " + (d(con)) + ", id: " + id);
       this.connections[id] = con;
       return con;
     };
@@ -1234,8 +1237,10 @@ require.define("/transport.js",function(require,module,exports,__dirname,__filen
     };
 
     XusEndpoint.prototype.send = function() {
+      var q, _ref;
       this.verbose("SEND " + (JSON.stringify(this.q)));
-      return this.proxy.mux(this, this.q);
+      _ref = [this.q, []], q = _ref[0], this.q = _ref[1];
+      return this.proxy.mux(this, q);
     };
 
     XusEndpoint.prototype.disconnect = function() {
@@ -1615,7 +1620,7 @@ require.define("/browser.js",function(require,module,exports,__dirname,__filenam
 (function() {
   var ProxyMux, WebSocketConnection, exports, log, _, _ref;
 
-  window.xus = exports = module.exports = require('./base');
+  window.Xus = exports = module.exports = require('./base');
 
   require('./proto');
 

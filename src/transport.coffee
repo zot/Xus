@@ -144,6 +144,7 @@ exports.ProxyMux = class ProxyMux
   newConnection: (factory)->
     id = @currentId++
     con = factory id
+    @verbose "proxy got new connection: #{d con}, id: #{id}"
     @connections[id] = con
     con
   processBatch: (muxedCon, batch)-> # called by endpoint; calls @handleDemuxedBatch
@@ -224,5 +225,8 @@ class XusEndpoint extends Connection # connected to an endpoint
     super @master, @proxy
     @verbose = @xus.verbose
   basicClose: -> @proxy.disconnect @
-  send: -> @verbose "SEND #{JSON.stringify @q}"; @proxy.mux @, @q
+  send: ->
+    @verbose "SEND #{JSON.stringify @q}"
+    [q, @q] = [@q, []]
+    @proxy.mux @, q
   disconnect: -> @xus.disconnect @

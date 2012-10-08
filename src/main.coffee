@@ -73,9 +73,7 @@ startXus = (config, httpServer)->
   xusServer.verbose = config.verbose
   exports.connectXus xusServer, httpServer
 
-startProxy = (config, httpServer)->
-  proxy = exports.connectProxy httpServer
-  proxy.verbose = config.verbose
+startProxy = (config, httpServer)-> exports.connectProxy config, httpServer
 
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'

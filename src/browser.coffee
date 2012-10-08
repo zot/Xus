@@ -1,4 +1,4 @@
-window.xus = exports = module.exports = require './base'
+window.Xus = exports = module.exports = require './base'
 require './proto'
 {log, ProxyMux, WebSocketConnection} = require './transport'
 require './peer'

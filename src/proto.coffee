@@ -233,6 +233,7 @@ exports.Server = class Server
       con.addCmd cmd
   set: (con, [x, key, value, storageMode], cmd)->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
+    else if @values[key] is value then false
     else
       if storageMode and storageMode isnt @storageModes[key] and @storageModes[key] is storage_permanent
         @remove con, key

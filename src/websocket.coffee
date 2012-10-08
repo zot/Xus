@@ -41,9 +41,10 @@ exports.connectXus = (xusServer, httpServer)->
     else if req.url == '/peer' then wServer.handleUpgrade req, socket, head, (con)-> new WebSocketConnection xusServer, con
     else con.destroy()
 
-exports.connectProxy = (httpServer)->
+exports.connectProxy = (config, httpServer)->
   proxy = new ProxyMux
     processBatch: (con, demuxedBatch)-> proxy.verbose "proxy sending: #{JSON.stringify demuxedBatch} to #{con.constructor.name}"; con.send demuxedBatch
+  proxy.verbose = config.verbose
   wServer = new ws.Server noServer: true
   httpServer.on 'upgrade', (req, socket, head)->
     proxy.verbose "REQUEST: #{req.url}"
