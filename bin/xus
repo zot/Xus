@@ -59,10 +59,33 @@ showBatches() {
         read batch <&3
         if [ -z "$batch" ]; then break; fi
         while [ $(echo $batch | jshon -l) != 0 ]; do
-            echo $(echo $batch | jshon -e 0)
+            msg="$(echo $batch | jshon -e 0)"
+            if [ "$(echo $msg | jshon -e 0 -u)" = value ]; then
+                msg="$(echo $msg | jshon -d 0 -d 0 -d 0 -d 0)"
+                while [ "$(echo $msg | jshon -l)" != 0 ]; do
+                    showBatch "[\"set\", $(echo $msg | jshon -e 0), $(echo $msg | jshon -e 1)]" $*
+                    msg="$(echo $msg | jshon -d 0 -d 0)"
+                done
+            else
+                showBatch "$(echo $batch | jshon -e 0)" $*
+            fi
             batch=$(echo $batch | jshon -d 0)
         done
     done
+}
+
+showBatch() {
+    if [ "$(echo $1 | jshon -e 0 -u)" = set ]; then
+        key=$(echo $1 | jshon -e 1 -u)
+        value=$(echo $1 | jshon -e 2 -u)
+        while [ $# != 1 ]; do
+            shift
+            if expr "$key" : "$1\\|$1/.*" >/dev/null; then
+                echo $key $value
+                return
+            fi
+        done
+    fi
 }
 
 showVars() {
@@ -199,7 +222,6 @@ removeAll)
 ;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
-        echo PEER NAME: $XUS_PEER
         exec "$@"
 ;;
 send-cmd)
@@ -234,13 +256,14 @@ listen-cmd)
         fi
         echo -n '['$master'["set", "this/listen", [' >&4
         prefix=''
+        keys="$*"
         while [ $# != 0 ]; do
             echo -n $prefix'"'$1'"' >&4
             prefix=", "
             shift
         done
         echo ']]]' >&4
-        showBatches
+        showBatches $keys
 ;;
 *) usage $0
 ;;

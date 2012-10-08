@@ -1,4 +1,4 @@
-exports = module.exports = require './base'
+{d} = exports = module.exports = require './base'
 {setCmds, prefixes} = require './proto'
 _ = require './lodash.min'
 
@@ -9,6 +9,7 @@ exports.Peer = class Peer
     @treeListeners = {}
     @values = {}
     @keys = []
+  verbose: ->
   # API UTILS
   transaction: (block)->
     @inTransaction = true
@@ -37,7 +38,7 @@ exports.Peer = class Peer
   removeAll: (key, value)-> @addCmd ['removeAll', key, value]
   # INTERNAL API
   processBatch: (con, batch)->
-    console.log "Peer batch: #{JSON.stringify batch}"
+    @verbose "Peer batch: #{JSON.stringify batch}"
     numKeys = @keys.length
     for cmd in batch
       [name, key, value, index] = cmd
@@ -112,3 +113,35 @@ exports.Peer = class Peer
     if !@inTransaction then @con.send()
   disconnect: -> @con.close()
   listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
+
+####
+#
+# createDirectPeer xus, factory -- make a peer with an in-process connection to xus
+#
+####
+
+exports.createDirectPeer = (xus, peerFactory)->
+  ctx = connected: true, server: xus
+  # the object that xus uses as its connection
+  xusConnection = new DirectConnection
+  # the object that the peer uses as its connection
+  peerConnection = new DirectConnection
+  peer = (peerFactory ? (con)-> new Peer con) peerConnection
+  peerConnection.connect(xusConnection, xus, ctx)
+  xusConnection.connect(peerConnection, peer, ctx)
+  xus.addConnection xusConnection
+  peer
+
+class DirectConnection
+  constructor: -> @q = []
+  connect: (@otherConnection, @otherMaster, @ctx)->
+  isConnected: -> @ctx.connected
+  close: ->
+    @ctx.connected = false
+    @q = @otherConnection.q = null
+  addCmd: (cmd)-> @q.push cmd
+  send: ->
+    if @ctx.connected && @q.length
+      @ctx.server.verbose "#{d @} SENDING #{@name}, #{JSON.stringify @q}"
+      [q, @q] = [@q, []]
+      @otherMaster.processBatch @otherConnection, q

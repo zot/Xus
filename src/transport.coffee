@@ -85,38 +85,6 @@ exports.Connection = class Connection
   newData: (data)-> @verbose "#{d @} read data: #{data}"; @codec.newData @, data
   processBatch: (batch)-> @master.processBatch @, batch
 
-####
-#
-# createDirectPeer xus, factory -- make a peer with an in-process connection to xus
-#
-####
-
-exports.createDirectPeer = (xus, peerFactory)->
-  ctx = connected: true, server: xus
-  # the object that xus uses as its connection
-  xusConnection = new DirectConnection
-  # the object that the peer uses as its connection
-  peerConnection = new DirectConnection
-  peer = peerFactory peerConnection
-  peerConnection.connect(xusConnection, xus, ctx)
-  xusConnection.connect(peerConnection, peer, ctx)
-  xus.addConnection xusConnection
-  peer
-
-class DirectConnection
-  constructor: -> @q = []
-  connect: (@otherConnection, @otherMaster, @ctx)->
-  isConnected: -> @ctx.connected
-  close: ->
-    @ctx.connected = false
-    @q = @otherConnection.q = null
-  addCmd: (cmd)-> @q.push cmd
-  send: ->
-    if @ctx.connected && @q.length
-      @ctx.server.verbose "#{d @} SENDING #{@name}, #{JSON.stringify @q}"
-      [q, @q] = [@q, []]
-      @otherMaster.processBatch @otherConnection, q
-
 exports.SocketConnection = class SocketConnection extends Connection
   constructor: (@master, @con, initialData)->
     super @master, null, (initialData ? '').toString()
@@ -164,8 +132,11 @@ exports.ProxyMux = class ProxyMux
   constructor: (@handler)->
     @currentId = 0
     @connections = {}
+  verbose: ->
   prepare: ->
-  addConnection: (con)-> @verbose "proxy main connection"; @mainConnection = con
+  addConnection: (con)->
+    @verbose "proxy main connection";
+    @mainConnection = con
   newSocketEndpoint: (conFactory)-> @newConnection (id)=>
     endPoint = new SocketEndpoint @, id
     conFactory endPoint
@@ -195,18 +166,22 @@ exports.ProxyMux = class ProxyMux
     b = batch[1..]
     if b.length then @handler.processBatch con, b
   disconnect: (con)->
-    if con == @mainConnection then process.exit()
+    if con == @mainConnection then @mainDisconnect con
     else
       @mainSend [['delete', con.id]]
       @removeConnection con
+  mainDisconnect: (con)->
+    console.log "Disconnecting mux connection"
+    process.exit()
   removeConnection: (con)->
     if connected
       connected = false
       delete @connections[con.id]
   mux: (endpoint, batch)->
-    batch.splice 0, 0, ['data', endpoint.id]
+    b = batch[0..]
+    b.splice 0, 0, ['data', endpoint.id]
     endpoint.newConnection = false
-    @mainSend batch
+    @mainSend b
   mainSend: (batch)->
     @verbose "#{d @} proxy forwarding muxed batch: #{JSON.stringify batch} to #{@mainConnection.constructor.name}"
     @mainConnection.q = batch
