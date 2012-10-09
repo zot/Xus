@@ -132,9 +132,12 @@ exports.Server = class Server
           if (@[name] con, msg, msg) and isSetter
             if key == "#{con.peerPath}/name" then @name con, msg[2]
             else if key == "#{con.peerPath}/master" then @setMaster con, msg[2]
-            c.addCmd msg for c in @relevantConnections prefixes key
+            @addCmd c, msg for c in @relevantConnections prefixes key
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
+  addCmd: (con, msg)->
+    (msg[k] = @getValue v) for v, k in msg
+    con.addCmd msg
   relevantConnections: (keyPrefixes)-> _.filter @connections, (c)-> caresAbout c, keyPrefixes
   setConName: (con, name)->
     con.name = name
@@ -244,7 +247,7 @@ exports.Server = class Server
           @newKeys = true
         @values[key] = value
       if storageMode then @storageModes[key] = storageMode
-      cmd[2] = value = @getValue value
+      cmd[2] = value
       true
   put: (con, [x, key, value, index])->
     if !@values[key] || typeof @values[key] != 'object' then @disconnect con, error_variable_not_object, "Can't put with #{key} because it is not an object"

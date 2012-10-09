@@ -53,9 +53,13 @@ run = ->
           when '-x' then config.cmd = args[++i]
           when '-v' then config.verbose = log
           when '-p' then config.proxy = true
+          when '-u'
+            pattern = new RegExp "^#{args[++i]}/"
+            dir = path.resolve args[++i]
+            exports.dirMap.push [pattern, new RegExp("^#{dir}/"), "#{dir}/"]
         i++
       [config.host, config.port] = parseAddr config.addr || ':'
-      httpServer = startWebSocketServer config.host, config.port, ->
+      httpServer = startWebSocketServer config, ->
         console.log "Server #{config.name} started on port: #{httpServer.address().port}"
         process.env.XUS_SERVER = config.name
         process.env.XUS_PORT = httpServer.address().port

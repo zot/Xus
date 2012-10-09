@@ -4,30 +4,42 @@ ws = require 'ws'
 _ = require './lodash.min'
 pfs = require './pfs'
 path = require 'path'
+fs = require 'fs'
 
-exports.startWebSocketServer = (host, port, ready)->
-  app = require('http').createServer handler
-  if port then app.listen port, host, ready
+exports.startWebSocketServer = (config, ready)->
+  app = require('http').createServer createHandler(config)
+  if config.port then app.listen config.port, config.host, ready
   else app.listen ready
   app
 
-fileDir = "#{path.resolve path.dirname path.dirname process.argv[1]}/examples/"
-xusPath = "#{path.resolve path.dirname path.dirname process.argv[1]}/xus.js"
+exports.dirMap = dirMap = []
+extensions =
+  js: 'application/javascript'
+  html: 'text/html'
+  gif: 'image/gif'
+  css: 'text/css'
+  png: 'image/png'
 
-handler = (req, res)->
-  pfx = new RegExp '^/file/'
-  if req.url.match(pfx) || req.url == '/xus.js'
-    file = if req.url == '/xus.js' then xusPath else path.resolve req.url.replace(pfx, fileDir)
-    if file.match("^#{fileDir}") or file == xusPath
-      pfs.open(file, 'r')
-        .then((fd)-> pfs.readFile fd)
-        .then((s)->
-          res.writeHead 200
-          res.end s)
-        .fail(-> badPage req, res)
-        .end()
+createHandler = (config)-> (req, res)->
+  for [urlPattern, dirPattern, dir] in dirMap
+    file = path.resolve req.url.replace(urlPattern, dir)
+    if file.match(dirPattern)
+      str = fs.createReadStream file
+      str.on 'error', -> badPage req, res
+      str.on 'end', -> config.verbose "Finished #{file}"
+      str.on 'open', (fd)->
+        fs.fstat fd, (err, stat)->
+          if err then badPage req, res
+          else 
+            config.verbose "Starting #{file}"
+            res.setHeader 'Content-Type', contentType(file)
+            res.setHeader 'Content-Length', stat.size
+            res.writeHead 200
+            pfs.pipe str, res
       return
   badPage req, res
+
+contentType = (file)-> extensions[file.replace /^.*\.([^.]*)$/, '$1'] ? 'text/plain'
 
 badPage = (req, res)->
   res.writeHead 404

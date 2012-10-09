@@ -12,17 +12,17 @@ $(basename $1) <command> [<options>]
 
 COMMANDS
 list
-start <name> [-s <addr>] [-e <expr>]...    start a xus instance
-stop <name>                                stop a xus instance
-run <name> <command> [<arg>]...            run command in context of named xus instance
-clean <name> | -a                          clear info for one or all xus instances
-get [-a] <name> <key>...                   get a value, -a means include children
-set <name> <key> <value>                   set a value
-listen <name> <key>...                     listen for keys
-put <name> <key> <index> <value>           set the value of a key in a variable
-insert <name> <key> <index> <value>        insert a value into an array
-removeFirst <name> <key> <value>           remove first occurrence of value from array
-removeAll <name> <key> <value>             remove all occurrences of value from array
+start <name> [-s <addr>] [-e <expr>]...   start a xus instance
+stop <name>                               stop a xus instance
+run <name> <command> [<arg>]...           run command in context of named xus instance
+clean <name> | -a                         clear info for one or all xus instances
+get [-a] [-v] <name> <key>...             get a value, -a means include children, -v means value only
+set <name> <key> <value>                  set a value
+listen <name> <key>...                    listen for keys
+put <name> <key> <index> <value>          set the value of a key in a variable
+insert <name> <key> <index> <value>       insert a value into an array
+removeFirst <name> <key> <value>          remove first occurrence of value from array
+removeAll <name> <key> <value>            remove all occurrences of value from array
 EOF
     exit 1
 }
@@ -35,14 +35,14 @@ checkState() {
 }
 
 listServer() {
-    echo $1 $(echo $2 | jshon -e address -u) $(echo $2 | jshon -e port -u)
+    echo $1 $(echo "$2" | jshon -e address -u) $(echo "$2" | jshon -e port -u)
 }
 
 removeEntry() {
     if [ -e $STATE ]; then
         st=$(<$STATE)
         if [ -n "$st" ]; then
-            echo $st | jshon -e servers -d $1 -p > $STATE
+            echo "$st" | jshon -e servers -d $1 -p > $STATE
         fi
     fi
 }
@@ -56,28 +56,28 @@ getPort() {
 
 showBatches() {
     while true; do
-        read batch <&3
+        read -r batch <&3
         if [ -z "$batch" ]; then break; fi
-        while [ $(echo $batch | jshon -l) != 0 ]; do
-            msg="$(echo $batch | jshon -e 0)"
-            if [ "$(echo $msg | jshon -e 0 -u)" = value ]; then
-                msg="$(echo $msg | jshon -d 0 -d 0 -d 0 -d 0)"
-                while [ "$(echo $msg | jshon -l)" != 0 ]; do
-                    showBatch "[\"set\", $(echo $msg | jshon -e 0), $(echo $msg | jshon -e 1)]" $*
-                    msg="$(echo $msg | jshon -d 0 -d 0)"
+        while [ $(echo "$batch" | jshon -l) != 0 ]; do
+            msg="$(echo "$batch" | jshon -e 0)"
+            if [ "$(echo "$msg" | jshon -e 0 -u)" = value ]; then
+                msg="$(echo "$msg" | jshon -d 0 -d 0 -d 0 -d 0)"
+                while [ "$(echo "$msg" | jshon -l)" != 0 ]; do
+                    showBatch "[\"set\", $(echo "$msg" | jshon -e 0), $(echo "$msg" | jshon -e 1)]" $*
+                    msg="$(echo "$msg" | jshon -d 0 -d 0)"
                 done
             else
-                showBatch "$(echo $batch | jshon -e 0)" $*
+                showBatch "$(echo "$batch" | jshon -e 0)" $*
             fi
-            batch=$(echo $batch | jshon -d 0)
+            batch=$(echo "$batch" | jshon -d 0)
         done
     done
 }
 
 showBatch() {
-    if [ "$(echo $1 | jshon -e 0 -u)" = set ]; then
-        key=$(echo $1 | jshon -e 1 -u)
-        value=$(echo $1 | jshon -e 2 -u)
+    if [ "$(echo "$1" | jshon -e 0 -u)" = set ]; then
+        key=$(echo "$1" | jshon -e 1 -u)
+        value=$(echo "$1" | jshon -e 2 -u)
         while [ $# != 1 ]; do
             shift
             if expr "$key" : "$1\\|$1/.*" >/dev/null; then
@@ -89,14 +89,24 @@ showBatch() {
 }
 
 showVars() {
-    read batch <&3
-    while [ $(echo $batch | jshon -l) != 0 ]; do
-        line="$(echo $batch | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
-        while [ $(echo $line | jshon -l) != 0 ]; do
-            echo $(echo $line | jshon -e 0 -u -p -e 1) | awk '{print $1 " " $2}'
-            line=$(echo $line | jshon -d 0 -d 0)
+    read -r batch <&3
+    echo "$batch" > /tmp/lastbatch
+    if [ "$1" = -v ]; then
+        key=false
+        shift
+    else
+        key=true
+    fi
+    while [ $(echo "$batch" | jshon -l) != 0 ]; do
+        line="$(echo "$batch" | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
+        while [ $(echo "$line" | jshon -l) != 0 ]; do
+            if [ "$key" = true ]; then
+                echo -n "$(echo "$line" | jshon -e 0 -u) "
+            fi
+            echo "$line" | jshon -e 1
+            line=$(echo "$line" | jshon -d 0 -d 0)
         done
-        batch=$(echo $batch | jshon -d 0)
+        batch=$(echo "$batch" | jshon -d 0)
     done
 }
 
@@ -104,17 +114,17 @@ inc() {
     xus="$1"
     name="$2"
     key="$3"
-    read line
+    read -r line
     if [ -n "$line" ]; then
-        while [ $(echo $line | jshon -l) != 0 ]; do
-            set $(echo $line | jshon -e 0 -e 1 -u -p -e 2)
+        while [ $(echo "$line" | jshon -l) != 0 ]; do
+            set $(echo "$line" | jshon -e 0 -e 1 -u -p -e 2)
             if [ "$1" = "$key" ]; then
                 new=$(expr $2 + 1)
                 echo set "$key" = $new
                 $xus set "$name" "$key" $new
                 return
             fi
-            line=$(echo $line | jshon -d 0)
+            line=$(echo "$line" | jshon -d 0)
         done
     fi
 }
@@ -124,8 +134,8 @@ wsConnect() {
     echo -e 'Upgrade: socket\r' >&4
     echo -e 'Connection: Upgrade\r' >&4
     echo -e '\r' >&4
-    read line <&3
-    echo $line
+    read -r line <&3
+    echo "$line"
 }
 
 close() {
@@ -164,9 +174,9 @@ list)
         fi
         state="$(<$STATE)"
         if [ -n "$state" ]; then
-            servers=$(echo $state | jshon -e servers)
-            for server in $(echo $servers | jshon -k); do
-                listServer $server "$(echo $servers | jshon -e $server)"
+            servers=$(echo "$state" | jshon -e servers)
+            for server in $(echo "$servers" | jshon -k); do
+                listServer $server "$(echo "$servers" | jshon -e $server)"
             done
         fi
 ;;
@@ -191,9 +201,9 @@ clean)
         state="$(<$STATE)"
         if [ -n "$state" ]; then
             if [ "$1" = -a ]; then
-                echo $state | jshon -d servers -n object -i servers > $STATE
+                echo "$state" | jshon -d servers -n object -i servers > $STATE
             else
-                echo $state | jshon -e servers -d "$1" -p > $STATE
+                echo "$state" | jshon -e servers -d "$1" -p > $STATE
             fi
         fi
 ;;

@@ -17,6 +17,8 @@ ex.mkdir = (path, mode)-> q.ncall(fs.mkdir, fs, path, mode)
 
 ex.stat = (path)-> q.ncall(fs.stat, fs, path)
 
+ex.fstat = (fd)-> q.ncall(fs.stat, fs, fd)
+
 ex.createReadStream = (path, options)-> q.ncall(fs.createReadStream, fs, path, options)
 
 ex.readFile = (fd)->
@@ -27,6 +29,20 @@ ex.readFile = (fd)->
 ex.writeFile = (fd, str)->
   done = q.defer()
   writeSome done, fd, new Buffer(str), 0
+  done.promise
+
+ex.readStream = (path)->
+  done = q.defer()
+  str = fs.createReadStream path
+  str.on 'open', (fd)-> done.resolve [str, fd]
+  str.on 'error', (e)-> done.reject e
+  done.promise
+  
+ex.pipe = (stream1, stream2)->
+  done = q.defer()
+  stream1.on 'end', -> done.resolve stream1
+  stream1.on 'error', (e)-> done.reject e
+  stream1.pipe stream2
   done.promise
 
 basicFlock = (fd, flags)-> q.ncall(fs.flock, fs, fd, flags)

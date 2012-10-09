@@ -40,9 +40,10 @@ exports.Peer = class Peer
   processBatch: (con, batch)->
     @verbose "Peer batch: #{JSON.stringify batch}"
     numKeys = @keys.length
+    oldValues = {}
     for cmd in batch
       [name, key, value, index] = cmd
-      oldValue = name in setCmds && @values[key]
+      if name in setCmds then oldValues[key] = @values[key]
       switch name
         when 'name' then @rename key
         when 'set' then @values[key] = value
@@ -61,13 +62,14 @@ exports.Peer = class Peer
         when 'error'
           [name, type, msg] = cmd
           console.log msg
-      if name in setCmds
-        block(key, @values[key], oldValue, cmd, batch) for block in @listenersFor key
-        if !oldValue then @keys.push key
+      if name in setCmds && !oldValues[key] then @keys.push key
+    if numKeys != @keys.length then @keys.sort()
+    for cmd in batch
+      [name, key, value, index] = cmd
+      if name in setCmds then block(key, @values[key], oldValues[key], cmd, batch) for block in @listenersFor key
       else if name == 'value' && @treeListeners[key]
         cb cmd, batch for cb in @treeListeners[key]
         delete @treeListeners[key]
-    if numKeys != @keys.length then @keys.sort()
   # PRIVATE
   rename: (newName)->
     newPath = "peer/#{newName}"

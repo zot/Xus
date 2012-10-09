@@ -1,0 +1,36 @@
+#!/bin/bash
+
+OPEN=${OPEN:-/etc/alternatives/gnome-www-browser}
+
+usage() {
+    cat <<EOF
+$(basename $0) <name> <command> [<options>]
+
+name is the name of the leisure instance
+
+COMMANDS
+start        start the leisure instance
+cat          prints contents of current document
+functions    prints functions in current document
+EOF
+}
+
+case "$1" in
+start)
+        shift
+        verbose=""
+        if [ "$1" = -v ]; then
+            verbose="-v"
+            shift
+        fi
+        $XUS_DIR/bin/xus start "$1" "$verbose" -p -u '/leisure' $LEISURE_DIR -x "$OPEN"' http://localhost:$XUS_PORT/leisure/doc.html#xusproxy=ws://localhost:$XUS_PORT/proxy'
+;;
+cat)
+        echo -E "[$(bin/xus get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
+;;
+functions)
+        bin/xus get $2 -v leisure/functions | jshon -a -u
+;;
+*) usage
+;;
+esac

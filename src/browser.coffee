@@ -2,7 +2,7 @@ window.Xus = exports = module.exports = require './base'
 require './proto'
 {log, ProxyMux, WebSocketConnection} = require './transport'
 require './peer'
-_ = require './lodash.min'
+window._ = _ = require './lodash.min'
 
 if window.MozWebSocket then window.WebSocket = window.MozWebSocket
 
