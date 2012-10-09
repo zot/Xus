@@ -10,8 +10,8 @@ name is the name of the leisure instance
 
 COMMANDS
 start        start the leisure instance
-cat          prints contents of current document
-functions    prints functions in current document
+cat          writes contents of current document
+functions    writes functions in current document
 EOF
 }
 

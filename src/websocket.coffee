@@ -2,9 +2,10 @@ exports = module.exports = require './base'
 {ProxyMux, SocketConnection, WebSocketConnection, Connection} = require './transport'
 ws = require 'ws'
 _ = require './lodash.min'
-pfs = require './pfs'
 path = require 'path'
 fs = require 'fs'
+send = require 'send'
+url = require 'url'
 
 exports.startWebSocketServer = (config, ready)->
   app = require('http').createServer createHandler(config)
@@ -21,21 +22,13 @@ extensions =
   png: 'image/png'
 
 createHandler = (config)-> (req, res)->
+  pathname = url.parse(req.url).pathname
   for [urlPattern, dirPattern, dir] in dirMap
-    file = path.resolve req.url.replace(urlPattern, dir)
-    if file.match(dirPattern)
-      str = fs.createReadStream file
-      str.on 'error', -> badPage req, res
-      str.on 'end', -> config.verbose "Finished #{file}"
-      str.on 'open', (fd)->
-        fs.fstat fd, (err, stat)->
-          if err then badPage req, res
-          else 
-            config.verbose "Starting #{file}"
-            res.setHeader 'Content-Type', contentType(file)
-            res.setHeader 'Content-Length', stat.size
-            res.writeHead 200
-            pfs.pipe str, res
+    file = path.resolve pathname.replace(urlPattern, dir)
+    if file.match(dirPattern) # make sure there's no funny business :)
+      send(req, pathname.replace(urlPattern, "/"))
+      .root(dir)
+      .pipe(res);
       return
   badPage req, res
 
