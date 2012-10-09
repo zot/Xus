@@ -1,3 +1,8 @@
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 {d} = exports = module.exports = require './base'
 {setCmds, prefixes} = require './proto'
 _ = require './lodash.min'

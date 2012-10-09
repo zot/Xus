@@ -1,3 +1,8 @@
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 q = require 'q'
 fs = require 'fs-ext'
 

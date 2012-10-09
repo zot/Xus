@@ -1,3 +1,8 @@
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 xus = require './peer'
 
 exports.main = ->

@@ -1,3 +1,8 @@
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 SRC=transport proto browser peer base
 EXAMPLES=echo computed
 CMD=main pfs websocket

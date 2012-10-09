@@ -1,5 +1,10 @@
 #!/bin/sh
 
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 echo '[["connect"],["value", null, true, "'$1'"]]' >&4
 read line <&3
 line="$(echo $line | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"

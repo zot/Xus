@@ -1,3 +1,8 @@
+####
+# Copyright (C) 2012, Bill Burdick
+# License: ZLIB license
+####
+
 window.Xus = exports = module.exports = require './base'
 require './proto'
 {log, ProxyMux, WebSocketConnection} = require './transport'

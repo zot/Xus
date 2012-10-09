@@ -1,9 +1,0 @@
-#!/bin/bash
-
-# print the value of a variable or nothing if the variable has no value
-
-echo '[["value", "'$1'", null, false]]' >&4
-read line <&3
-if [ "$(echo $line | jshon -e 0 -l)" -gt 4 ]; then
-   echo $(echo $line | jshon -e 0 -e 4 -u -p -e 5) | awk '{print $2}'
-fi
