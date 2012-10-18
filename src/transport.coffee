@@ -174,7 +174,7 @@ exports.ProxyMux = class ProxyMux
   disconnect: (con)->
     if con == @mainConnection then @mainDisconnect con
     else
-      @mainSend [['delete', con.id]]
+      @mainSend [['disconnect', con.id]]
       @removeConnection con
   mainDisconnect: (con)->
     console.log "Disconnecting mux connection"

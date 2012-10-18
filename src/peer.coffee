@@ -26,7 +26,7 @@ exports.Peer = class Peer
     if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
     if !@changeListeners[key]
       @changeListeners[key] = []
-      @grabTree key, (msg)=>
+      @grabTree key, (msg, batch)=>
         if simulateSetsForTree then @sendTreeSets @setsForTree(msg), callback
         else callback key, (if msg[4] is key then msg[5] else null), null, msg, batch
         @changeListeners[key].push callback
@@ -36,7 +36,7 @@ exports.Peer = class Peer
   value: (key, cookie, isTree, callback)->
     @grabTree key, callback
     @addCmd ['value', key, cookie, isTree]
-  set: (key, value)-> @addCmd ['set', key, value]
+  set: (key, value, storage)-> @addCmd (if storage then ['set', key, value, storage] else ['set', key, value])
   put: (key, index, value)-> @addCmd ['put', key, value, index]
   splice: (key, spliceArgs...)-> @addCmd ['splice', key, spliceArgs...]
   removeFirst: (key, value)-> @addCmd ['removeFirst', key, value]

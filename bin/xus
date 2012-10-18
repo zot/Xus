@@ -17,17 +17,17 @@ $(basename $1) <command> [<options>]
 
 COMMANDS
 list
-start <name> [-s <addr>] [-e <expr>]...   start a xus instance
-stop <name>                               stop a xus instance
-run <name> <command> [<arg>]...           run command in context of named xus instance
-clean <name> | -a                         clear info for one or all xus instances
-get [-a] [-v] <name> <key>...             get a value, -a means include children, -v means value only
-set <name> <key> <value>                  set a value
-listen <name> <key>...                    listen for keys
-put <name> <key> <index> <value>          set the value of a key in a variable
-insert <name> <key> <index> <value>       insert a value into an array
-removeFirst <name> <key> <value>          remove first occurrence of value from array
-removeAll <name> <key> <value>            remove all occurrences of value from array
+start <name> [-s <addr>] [-e <expr>] [-x <cmd>]...  start a xus instance
+stop <name>                                         stop a xus instance
+run <name> <command> [<arg>]...                     run command in context of named xus instance
+clean <name> | -a                                   clear info for one or all xus instances
+get [-a] [-v] <name> <key>...                       get a value, -a: include children, -v: value only
+set <name> <key> <value>                            set a value
+listen <name> [-m] <key>...                         listen for keys, -m sets this peer as the master
+put <name> <key> <index> <value>                    set the value of a key in a variable
+insert <name> <key> <index> <value>                 insert a value into an array
+removeFirst <name> <key> <value>                    remove first occurrence of value from array
+removeAll <name> <key> <value>                      remove all occurrences of value from array
 EOF
     exit 1
 }
@@ -265,7 +265,7 @@ get-cmd)
 listen-cmd)
         if [ "$1" = -m ]; then
             master='["set", "this/master", true], '
-            shift 2
+            shift 1
         else
             master=''
         fi

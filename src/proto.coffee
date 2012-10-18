@@ -182,9 +182,10 @@ exports.Server = class Server
       if msg then @error con, errorType, msg
       con.send()
       con.close()
-      if con is @master then process.exit()
+      if con is @master then @exit()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
+  exit: -> console.log "No custom exit function"
   keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
   setListens: (con)->
     thisPath = new RegExp "^this/"

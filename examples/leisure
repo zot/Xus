@@ -6,6 +6,7 @@
 ####
 
 OPEN=${OPEN:-/etc/alternatives/gnome-www-browser}
+XUS="$XUS_DIR/bin/xus"
 
 usage() {
     cat <<EOF
@@ -14,27 +15,89 @@ $(basename $0) <name> <command> [<options>]
 name is the name of the leisure instance
 
 COMMANDS
-start        start the leisure instance
-cat          writes contents of current document
-functions    writes functions in current document
+start <name> [-v]         start the leisure instance, -v enables verbose
+cat <name>                writes contents of current document
+selecion <name>  [-a]     display the selection, -a means show whenever it changes
+functions <name>          writes functions in current document
+eval <name> <code>        evaluate code and return the result
+repl <name> [-m]          read-eval-print-loop, -m makes the repl the master
 EOF
+}
+
+evalResult() {
+    expr="$1"
+    if [ -z "$expr" ]; then
+        exit
+    fi
+    while [ $(echo "$expr" | jshon -l) != 0 ]; do
+        echo $(echo "$expr" | jshon -e 0 -e 2 -u)
+        expr="$(echo "$expr" | jshon -d 0)"
+    done
 }
 
 case "$1" in
 start)
-        shift
+        name="$2"
+        shift 2
         verbose=""
         if [ "$1" = -v ]; then
             verbose="-v"
             shift
         fi
-        $XUS_DIR/bin/xus start "$1" "$verbose" -p -u '/leisure' $LEISURE_DIR -x "$OPEN"' http://localhost:$XUS_PORT/leisure/doc.html#xusproxy=ws://localhost:$XUS_PORT/proxy'
+        $XUS start "$name" "$verbose" -p -u '/leisure' $LEISURE_DIR -x "$OPEN"' --app=http://localhost:$XUS_PORT/leisure/doc.html#xusproxy=ws://localhost:$XUS_PORT/proxy'
 ;;
 cat)
-        echo -E "[$(bin/xus get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
+        echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
 ;;
 functions)
-        bin/xus get $2 -v leisure/functions | jshon -a -u
+        $XUS get $2 -v leisure/functions | jshon -a -u
+;;
+selection)
+        if [ "$3"  = -a ]; then
+            $XUS listen $2 leisure/selection/contents | sed -e 's/^[^ ]*\( \|$\)//'
+        else
+            sel="$($XUS get $2 -v leisure/selection/contents)"
+            if [ -n "$sel" ]; then
+                echo "[$sel]" | jshon -e 0 -u
+            fi
+        fi
+;;
+eval)
+        $XUS run $2 $0 eval-cmd "$3"
+;;
+eval-cmd)
+        shift
+        result="peer/$XUS_PEER/public/exprResult"
+        echo '[["set", "peer/'$XUS_PEER'/listen", ["'$result'"]],["set", "leisure/evalExpr", ["'"$*"'", "'$result'"]]]' >&4
+        read line <&3
+        if [ "$(echo $line | jshon -l)" != 1 ]; then
+            evalResult "$(echo $line | jshon -d 0)"
+        else
+            read line <&3
+            evalResult "$line"
+        fi
+;;
+repl)
+        name=$2
+        shift 2
+        $XUS run $name $0 repl-cmd "$@"
+;;
+repl-cmd)
+        if [ "$2" = -m ]; then
+            master='["set", "peer/'$XUS_PEER'/master", true],'
+            shift
+        else
+            master=""
+        fi
+        result="peer/$XUS_PEER/public/exprResult"
+        echo '['$master'["set", "peer/'$XUS_PEER'/listen", ["'$result'"]]]' >&4
+        read line <&3
+        while true; do
+            read -p "Leisure> " -e input
+            echo '[["set", "leisure/evalExpr", ["'"$input"'", "'$result'"]]]' >&4
+            read line <&3
+            evalResult "$line"
+        done
 ;;
 *) usage
 ;;

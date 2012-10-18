@@ -74,6 +74,7 @@ run = ->
 
 startXus = (config, httpServer)->
   exports.xusServer = xusServer = new Server()
+  xusServer.exit = -> process.exit()
   xusServer.verbose = config.verbose
   exports.connectXus xusServer, httpServer
 
