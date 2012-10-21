@@ -95,3 +95,21 @@ Xus provides simple, key-value publish and subscribe with optional storage.
      disconnecting will then shut xus down
    * peer/&lt;name>/public/&lt;path> -- public variables for a peer; other peers
      can change these
+
+# Reference Implementation Details
+
+The JavaScript reference implementation supports the following things
+
+* Values may be functions
+   * When the value is sent, Xus will call the function with no
+     arguments
+   * When the value will be set, Xus will call the function with one
+     argument (value)
+   * When the value is put, Xus will call the function with two
+     arguments (value, index)
+* Objects may behave like arrays should have the following properties:
+   * When the value is sent, Xus will use JSON.stringify, so you may
+     want to define toJSON to return an array for encoding
+   * When the value is spliced, Xus will use splice and length
+   * When the value is used with removeFirst or removeAll, Xus will
+     use splice and indexOf

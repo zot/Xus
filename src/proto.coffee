@@ -216,6 +216,14 @@ exports.Server = class Server
       cmd.push key, @getValue @values[key]
     con.addCmd cmd
   getValue: (value)-> if typeof value == 'function' then value() else value
+  # handle set, put, and splice -- for splice, value will be null
+  setValue: (key, value, index)->
+    old = @values[key]
+    if typeof old == 'function' then old(value, index)
+    else
+      if index? then @values[key][index] = value
+      else @values[key] = value
+      value
   name: (con, name)->
     if !name? then @disconnect con, error_bad_message, "No name given in name message"
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
@@ -251,32 +259,31 @@ exports.Server = class Server
           storageMode = storageMode || storage_memory
           @keys.push key
           @newKeys = true
-        @values[key] = value
+        value = @setValue key, value
       if storageMode then @storageModes[key] = storageMode
       cmd[2] = value
       true
   put: (con, [x, key, value, index])->
     if !@values[key] || typeof @values[key] != 'object' then @disconnect con, error_variable_not_object, "Can't put with #{key} because it is not an object"
     else
-      @values[key][index] = value
+      @setValue key, value, index
       true
   splice: (con, [x, key, index, del], cmd)->
     # CHANGE THIS TO SPLICE
-    if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
+    if !(@values[key].splice? && @values[key].length?) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and length"
     else
-      args = cmd.slice 2
-      if index < 0 then args[0] = @values[key].length + index + 1
-      @values[key].splice args...
+      if index < 0 then index = @values[key].length + index + 1
+      @values[key].splice index, (cmd.slice 3)...
       true
   removeFirst: (con, [x, key, value])->
-    if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
+    if !(@values[key].splice? && @values[key].indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else
       val = @values[key]
       idx = val.indexOf value
       if idx > -1 then val.splice idx, 1
       true
   removeAll: (con, [x, key, value])->
-    if !(@values[key] instanceof Array) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it is not an array"
+    if !(@values[key].splice? && @values[key].indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1

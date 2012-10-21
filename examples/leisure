@@ -22,6 +22,7 @@ functions <name>          writes functions in current document
 eval <name> <code>        evaluate code and return the result
 repl <name> [-m]          read-eval-print-loop, -m makes the repl the master
 EOF
+#files <name>              file service for Leisure
 }
 
 evalResult() {
