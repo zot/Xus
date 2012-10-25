@@ -269,7 +269,9 @@ exports.Server = class Server
       @setValue key, value, index
       true
   splice: (con, [x, key, index, del], cmd)->
-    # CHANGE THIS TO SPLICE
+    if !@values[key]? && (index == 0 || index == -1) && del == 0
+      @storageModes[key] = storage_memory
+      @values[key] = []
     if !(@values[key].splice? && @values[key].length?) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and length"
     else
       if index < 0 then index = @values[key].length + index + 1

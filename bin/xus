@@ -25,7 +25,7 @@ get [-a] [-v] <name> <key>...                       get a value, -a: include chi
 set <name> <key> <value>                            set a value
 listen <name> [-m] <key>...                         listen for keys, -m sets this peer as the master
 put <name> <key> <index> <value>                    set the value of a key in a variable
-insert <name> <key> <index> <value>                 insert a value into an array
+splice <name> <key> <index> <count> ...             insert a value into an array
 removeFirst <name> <key> <value>                    remove first occurrence of value from array
 removeAll <name> <key> <value>                      remove all occurrences of value from array
 EOF
@@ -82,14 +82,18 @@ showBatches() {
 showBatch() {
     if [ "$(echo "$1" | jshon -e 0 -u)" = set ]; then
         key=$(echo "$1" | jshon -e 1 -u)
-        value=$(echo "$1" | jshon -e 2 -u)
+        value="$(echo "$1" | jshon -e 2 -u 2>/dev/null || echo "$1" | jshon -e 2)"
         while [ $# != 1 ]; do
             shift
             if expr "$key" : "$1\\|$1/.*" >/dev/null; then
-                echo $key $value
+                echo $key set $value
                 return
             fi
         done
+    elif [ "$(echo "$1" | jshon -e 0 -u)" = splice ]; then
+        key=$(echo "$1" | jshon -e 1 -u)
+        value="$(echo $1 | jshon -d 0 -d 0)"
+        echo "$key splice $(echo $value)"
     fi
 }
 
@@ -225,7 +229,24 @@ set) [ -n "$3" ] && subCmd send-cmd "$1" '[["set", "'$2'", '$3']]' || usage
 put) [ -n "$3" ] && subCmd send-cmd "$1" '[["put", "'$2'", '$3', "'$4'"]]' || usage
 ;;
 splice)
-        echo splice not implemented, yet
+        if [ -z "$4" ]; then
+            usage
+        else
+            server="$1"
+            cmd='[["splice", "'$2'"'
+            shift
+            shift
+            while [ "$#" != 0 ]; do
+                if (echo $1 | jshon || jshon -n "$1")> /dev/null 2>&1; then
+                    cmd=$cmd",$1"
+                else
+                    cmd=$cmd',"'$1'"'
+                fi
+                shift
+            done
+            echo "$cmd]]"
+            subCmd send-cmd "$server" "$cmd]]"
+        fi
 ;;
 get) [ -n "$2" ] && subCmd get-cmd "$@" || usage
 ;;

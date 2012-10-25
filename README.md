@@ -1,4 +1,4 @@
-# Xus: simple, storage-backed messaging
+# Xus: Simple, storage-backed publish and subscribe messaging
 
 Xus provides simple, key-value publish and subscribe with optional storage.
 

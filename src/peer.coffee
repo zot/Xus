@@ -21,7 +21,15 @@ exports.Peer = class Peer
     block()
     @inTransaction = false
     @con.send()
-  listen: (key, simulateSetsForTree, callback)->
+  listen: (key, simulateSetsForTree, noChildren, callback)->
+    if typeof simulateSetsForTree == 'function'
+      noChildren = simulateSetsForTree
+      simulateSetsForTree = false
+    if typeof noChildren == 'function'
+      callback = noChildren
+      noChildren = false
+    if noChildren then callback = (changedKey, value, oldValue, cmd, batch)->
+      if key == changedKey then callback changedKey, value, oldValue, cmd, batch
     if @peerName? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@peerName}"
     if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
     if !@changeListeners[key]
