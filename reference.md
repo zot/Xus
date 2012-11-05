@@ -89,21 +89,32 @@ Xus commands are transmitted in JSON batches (using JSON or BSON);
       * **key -- string:** the key to change
       * **value -- any:** the value to remove
 * Responses
-   * ['error', type, msg] -- the server sends this if there is an
+   * **['error', type, msg]:** the server sends this if there is an
      error or warning.  Errors will disconnect the peer
       * **type -- string**
-         * **'warning\_no_storage':** peer requested permanent
+         * **'warning\_no\_storage':** peer requested permanent
              storage, but the server does not support it
          * **'error\_bad_message'**
-         * **'error\_bad\_storage_mode'**
+         * **'error\_bad\_storage\_mode'**
          * **'error\_variable\_not\_object':** peer used put with a
              key that doesn't contain an object
          * **'error\_variable\_not\_array':** peer used splice,
              removeFirst, or removeAll with a key that doesn't contain
              an array
-         * **'error\_duplicate\_peer_name':** peer set this/name to a
+         * **'error\_duplicate\_peer\_name':** peer set this/name to a
              name that is already in use
-         * **'error\_private_variable':** peer tried to set another
+         * **'error\_private\_variable':** peer tried to set another
              peer's private variable
-         * **'error\_bad_master':** peer tried to become master, but
+         * **'error\_bad\_master':** peer tried to become master, but
              there is already a master
+
+# Magic values
+
+* Function values: peers in the same VM as the server can use functions as values.
+   * set calls function with (newValue) -- **be careful**, because it could be
+     called with null
+   * get calls function with () -- **be careful**, because it could be
+     called with null
+* ValueHandlers: peers in the same VM as the server can use functions
+  to handle key trees, kind of like servlets.  This might be useful
+  for file services, etc.
