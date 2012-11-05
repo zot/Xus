@@ -14,6 +14,7 @@ exports.Peer = class Peer
     @treeListeners = {}
     @values = {}
     @keys = []
+    @valueListeners = {}
   verbose: ->
   # API UTILS
   transaction: (block)->
@@ -72,6 +73,9 @@ exports.Peer = class Peer
           for k, i in cmd[4..] by 2
             if !@values[k]? then @keys.push k
             @values[k] = cmd[i]
+          if l = @valueListeners[k]
+            delete @valueListeners[k]
+            block cmd for block in l
         when 'error'
           [name, type, msg] = cmd
           console.log msg

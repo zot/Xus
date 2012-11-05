@@ -46,10 +46,11 @@ run = ->
       console.log "Error: there is already a server named #{config.name}"
       process.exit(2)
     else
+      requirements = []
       while i < args.length
         switch args[i]
           when '-w' then config.addr = args[++i]
-          when '-e' then require(args[++i]).main()
+          when '-e' then requirements.push args[++i]
           when '-x' then config.cmd = args[++i]
           when '-v' then config.verbose = log
           when '-p' then config.proxy = true
@@ -70,15 +71,18 @@ run = ->
           .then(-> pfs.close(stateFd))
           .then(-> if config.cmd? then require('child_process').spawn('/bin/sh', ['-c', config.cmd], {stdio: ['ignore', 1, 2]}) else 1)
           .end()
-      (if config.proxy then startProxy else startXus) config, httpServer
+      (if config.proxy then startProxy else startXus) config, httpServer, (master)->
+        require(file).main(master) for file in requirements
 
-startXus = (config, httpServer)->
+startXus = (config, httpServer, thenBlock)->
   exports.xusServer = xusServer = new Server()
   xusServer.exit = -> process.exit()
   xusServer.verbose = config.verbose
   exports.connectXus xusServer, httpServer
+  thenBlock xusServer
 
-startProxy = (config, httpServer)-> exports.connectProxy config, httpServer
+startProxy = (config, httpServer, thenBlock)->
+  exports.connectProxy config, httpServer, thenBlock
 
 parseAddr = (addr)->
   [host, port] = parts = addr.split ':'

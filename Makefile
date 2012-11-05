@@ -4,7 +4,7 @@
 ####
 
 SRC=transport proto browser peer base
-EXAMPLES=echo computed
+EXAMPLES=echo computed leisureService
 CMD=main pfs websocket
 JS=$(SRC:%=lib/%.js)
 CMD_JS=$(CMD:%=lib/%.js)

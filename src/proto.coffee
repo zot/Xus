@@ -69,7 +69,6 @@ error_bad_message = 'error_bad_message'
 error_bad_storage_mode = 'error_bad_storage_mode'
 error_variable_not_object = 'error_variable_not_object'
 error_variable_not_array = 'error_variable_not_array'
-error_bad_connection = 'error_bad_connection'
 error_duplicate_peer_name = 'error_duplicate_peer_name'
 error_private_variable = 'error_private_variable'
 error_bad_master = 'error_bad_master'
@@ -141,7 +140,7 @@ exports.Server = class Server
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   addCmd: (con, msg)->
-    (msg[k] = @getValue v) for v, k in msg
+    (msg[k] = @getValue k, v) for v, k in msg
     con.addCmd msg
   relevantConnections: (keyPrefixes)-> _.filter @connections, (c)-> caresAbout c, keyPrefixes
   setConName: (con, name)->
@@ -213,17 +212,30 @@ exports.Server = class Server
     if idx > -1 then @keys.splice idx, 1
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
     for key in @keysForPrefix path
-      cmd.push key, @getValue @values[key]
+      cmd.push key, @getValue(key, @values[key])
     con.addCmd cmd
-  getValue: (value)-> if typeof value == 'function' then value() else value
+  getValue: (key, value)->
+    if typeof value == 'function' then value()
+    else if !value and (parent = getParentFunction key) then parent(value, index)
+    else value
   # handle set, put, and splice -- for splice, value will be null
   setValue: (key, value, index)->
     old = @values[key]
     if typeof old == 'function' then old(value, index)
+    else if !old and (parent = getParentFunction key) then parent(value, index)
     else
       if index? then @values[key][index] = value
       else @values[key] = value
       value
+  setValueHandler: (key, value)->
+    if typeof value == 'function'
+      value.xusHandler = true
+      @setValue key, value
+    else throw new Error "Attempt to use a non-function as a value handler for key: #{key}"
+  getParentFunction: (key)->
+    for pf in prefixes key
+      if typeof (parent = @values[pf]) == 'function' && parent.xusHandler = true then return @values[pf]
+    null
   name: (con, name)->
     if !name? then @disconnect con, error_bad_message, "No name given in name message"
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
@@ -246,7 +258,7 @@ exports.Server = class Server
   value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
     if tree then @sendTree con, key, cmd
     else
-      if @values[key]? then cmd.push key, @getValue @values[key]
+      if @values[key]? then cmd.push key, @getValue(key, @values[key])
       con.addCmd cmd
   set: (con, [x, key, value, storageMode], cmd)->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"

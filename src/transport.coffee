@@ -6,6 +6,7 @@
 {d} = exports = module.exports = require './base'
 {error_bad_connection} = require './proto'
 _ = require './lodash.min'
+fs = require 'fs'
 
 ####
 # Codecs -- used by connections to encode and decode messages
@@ -90,6 +91,42 @@ exports.Connection = class Connection
   newData: (data)-> @verbose "#{d @} read data: #{data}"; @codec.newData @, data
   processBatch: (batch)-> @master.processBatch @, batch
 
+exports.FdConnection = class FdConnection extends Connection
+  constructor: (@input, @output)->
+    super null, @null
+    @q = []
+    @writing = false
+  setMaster: (@master)->
+    @master.addConnection @
+    @read new Buffer 65536
+  basicClose: ->
+    fs.close @input, (err)-> console.log "Error closing connection: #{err.stack}"
+    fs.close @output, (err)-> console.log "Error closing connection: #{err.stack}"
+  connected: true
+  read: (buf)->
+    fs.read @input, buf, 0, buf.length, null, (err, bytesRead)=>
+      if err then @verbose "#{d @} disconnect"; @master.disconnect @
+      else
+        @verbose "#{d @} data '#{data}'"
+        @newData buf.toString(null, 0, bytesRead)
+        @read buf
+  write: (str)->
+    if str.length
+      @q.push str
+      if !@writing
+        @writing = true
+        @writeNext()
+  writeNext: ->
+    buf = new Buffer @q[0]
+    splice @q, 0, 1
+    writeBuffer buf
+  writeBuffer: (buf)->
+    fs.write @output, buf, 0, buf.length, null, (err, written)=>
+      if err then @verbose "#{d @} disconnect"; @master.disconnect @
+      else if written < buf.length then @writeBuffer buf.slice(written)
+      else if @q.length then @writeNext()
+      else @writing = false
+
 exports.SocketConnection = class SocketConnection extends Connection
   constructor: (@master, @con, initialData)->
     super @master, null, (initialData ? '').toString()
@@ -142,10 +179,16 @@ exports.ProxyMux = class ProxyMux
   addConnection: (con)->
     @verbose "proxy main connection";
     @mainConnection = con
-  newSocketEndpoint: (conFactory)-> @newConnection (id)=>
-    endPoint = new SocketEndpoint @, id
+  newConnectionEndpoint: (conFactory)-> @newConnection (id)=>
+    endPoint = new ConnectionEndpoint @, id
     conFactory endPoint
     endPoint
+  newPeer: ->
+    peer = new exports.Peer
+    peer.con = @newConnection (id)=> new XusEndpoint peer, @, id
+    @mainSend [['connect', peer.con.id]]
+    peer.con.newconnection = false
+    peer
   newConnection: (factory)->
     id = @currentId++
     con = factory id
@@ -200,18 +243,18 @@ exports.ProxyMux = class ProxyMux
 # mux -> forward -> socket
 # mux <- processBatch <- socket
 #####
-class SocketEndpoint # connected to an endpoint
+class ConnectionEndpoint # connected to an endpoint
   constructor: (@mux, @id)->
-    @verbose "New SocketEndpoint"
+    @verbose "New ConnectionEndpoint"
     @newConnection = true
   verbose: (str)-> @mux.verbose str
   addConnection: (@con)->
-    @verbose "SocketEndpoint connection: #{@con.constructor.name}"
+    @verbose "ConnectionEndpoint connection: #{@con.constructor.name}"
     @mux.mainSend [['connect', @id]]
     @newconnection = false
-  disconnect: (con)-> @verbose "SocketEndpoint disconnecting"; @mux.disconnect @
+  disconnect: (con)-> @verbose "ConnectionEndpoint disconnecting"; @mux.disconnect @
   send: (demuxedBatch)->
-    @verbose "SocketEndpoint writing: #{JSON.stringify demuxedBatch}"
+    @verbose "ConnectionEndpoint writing: #{JSON.stringify demuxedBatch}"
     @con.q = demuxedBatch
     @con.send()
   processBatch: (con, batch)-> @verbose "Socket endpoint read: #{batch}"; @mux.mux @, batch
@@ -225,13 +268,13 @@ class SocketEndpoint # connected to an endpoint
 # proxy -> processBatch -> Xus
 #####
 class XusEndpoint extends Connection # connected to an endpoint
-  newConnection: false
-  constructor: (@xus, @proxy, @id)->
+  constructor: (@master, @proxy, @id)->
     super @master, @proxy
-    @verbose = @xus.verbose
+    @verbose = @master.verbose
+  newConnection: false
   basicClose: -> @proxy.disconnect @
   send: ->
     @verbose "SEND #{JSON.stringify @q}"
     [q, @q] = [@q, []]
     @proxy.mux @, q
-  disconnect: -> @xus.disconnect @
+  disconnect: -> @master.disconnect @

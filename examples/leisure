@@ -43,6 +43,8 @@ start)
         verbose=""
         addr=""
         url="doc.html"
+        size=""
+        requirements=""
         while true; do
             case "$1" in
                 -v)
@@ -57,12 +59,20 @@ start)
                     url="$2"
                     shift 2
                     ;;
+                -s)
+                    size=" --app-window-size=$2 "
+                    shift 2
+                    ;;
+                -e)
+                    requirements=" -e $2 $requirements"
+                    shift 2
+                    ;;
                 *)
                     break
                     ;;
             esac
         done
-        $XUS start "$name" "$verbose" $addr -p -u '/leisure' $LEISURE_DIR -x "$OPEN"' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+        $XUS start "$name" "$verbose" $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy'
 ;;
 cat)
         echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
