@@ -467,6 +467,12 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return exports.createDirectPeer(this, peerFactory);
     };
 
+    Server.prototype.newPeer = function() {
+      return this.createPeer(function(con) {
+        return new xus.Peer(con);
+      });
+    };
+
     Server.prototype.processBatch = function(con, batch) {
       var c, msg, _i, _j, _len, _len1, _ref, _results;
       this.verbose("RECEIVED " + (JSON.stringify(batch)));
@@ -1581,6 +1587,8 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       this.values = {};
       this.keys = [];
       this.valueListeners = {};
+      this.queuedListeners = [];
+      this.name = null;
     }
 
     Peer.prototype.verbose = function() {};
@@ -1592,9 +1600,10 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       return this.con.send();
     };
 
-    Peer.prototype.listen = function(key, simulateSetsForTree, noChildren, callback) {
+    Peer.prototype.realListen = function(key, simulateSetsForTree, noChildren, callback) {
       var _ref1,
         _this = this;
+      key = key.replace(/^this\//, "peer/" + this.name + "/");
       if (typeof simulateSetsForTree === 'function') {
         noChildren = simulateSetsForTree;
         simulateSetsForTree = false;
@@ -1632,6 +1641,23 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       }
     };
 
+    Peer.prototype.listen = function() {
+      var args;
+      args = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
+      return this.queuedListeners.push(args);
+    };
+
+    Peer.prototype.switchListen = function() {
+      var cmd, _i, _len, _ref1;
+      this.listen = this.realListen;
+      _ref1 = this.queuedListeners;
+      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+        cmd = _ref1[_i];
+        this.listen.apply(this, cmd);
+      }
+      return this.queuedListeners = null;
+    };
+
     Peer.prototype.name = function(n) {
       return this.addCmd(['name', n]);
     };
@@ -1663,7 +1689,7 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       return this.addCmd(['removeAll', key, value]);
     };
 
-    Peer.prototype.processBatch = function(con, batch) {
+    Peer.prototype.realProcessBatch = function(con, batch) {
       var block, cb, cmd, i, idx, index, k, key, l, msg, name, numKeys, oldValues, type, value, _i, _j, _k, _l, _len, _len1, _len2, _len3, _len4, _m, _ref1, _ref2, _results, _step;
       this.verbose("Peer batch: " + (JSON.stringify(batch)));
       numKeys = this.keys.length;
@@ -1754,6 +1780,15 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
         }
       }
       return _results;
+    };
+
+    Peer.prototype.processBatch = function(con, batch) {
+      if (batch[0][0] === 'set' && batch[0][1] === 'this/name') {
+        this.name = batch[0][2];
+        this.processBatch = this.realProcessBatch;
+        this.switchListen();
+        return this.realProcessBatch(con, batch.slice(1));
+      }
     };
 
     Peer.prototype.rename = function(newName) {

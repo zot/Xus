@@ -15,6 +15,8 @@ exports.Peer = class Peer
     @values = {}
     @keys = []
     @valueListeners = {}
+    @queuedListeners = []
+    @name = null # this is set on connect, by the original @processBatch
   verbose: ->
   # API UTILS
   transaction: (block)->
@@ -22,7 +24,8 @@ exports.Peer = class Peer
     block()
     @inTransaction = false
     @con.send()
-  listen: (key, simulateSetsForTree, noChildren, callback)->
+  realListen: (key, simulateSetsForTree, noChildren, callback)->
+    key = key.replace /^this\//, "peer/#{@name}/"
     if typeof simulateSetsForTree == 'function'
       noChildren = simulateSetsForTree
       simulateSetsForTree = false
@@ -41,6 +44,13 @@ exports.Peer = class Peer
         @changeListeners[key].push callback
       @splice "this/listen", -1, 0, key
     else @tree key, simulateSetsForTree, callback
+  listen: (args...)-> # the initial @listen -- on connect, this switches to @realListen
+    @queuedListeners.push args
+  switchListen: -> # called on connect, by the initial @processBatch
+    @listen = @realListen
+    for cmd in @queuedListeners
+      @listen cmd...
+    @queuedListeners = null
   name: (n)-> @addCmd ['name', n]
   value: (key, cookie, isTree, callback)->
     @grabTree key, callback
@@ -51,7 +61,7 @@ exports.Peer = class Peer
   removeFirst: (key, value)-> @addCmd ['removeFirst', key, value]
   removeAll: (key, value)-> @addCmd ['removeAll', key, value]
   # INTERNAL API
-  processBatch: (con, batch)->
+  realProcessBatch: (con, batch)->
     @verbose "Peer batch: #{JSON.stringify batch}"
     numKeys = @keys.length
     oldValues = {}
@@ -87,6 +97,12 @@ exports.Peer = class Peer
       else if name == 'value' && @treeListeners[key]
         cb cmd, batch for cb in @treeListeners[key]
         delete @treeListeners[key]
+  processBatch: (con, batch)->
+    if batch[0][0] == 'set' and batch[0][1] == 'this/name'
+      @name = batch[0][2]
+      @processBatch = @realProcessBatch
+      @switchListen()
+      @realProcessBatch con, batch[1..]
   # PRIVATE
   rename: (newName)->
     newPath = "peer/#{newName}"

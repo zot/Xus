@@ -114,6 +114,7 @@ exports.Server = class Server
     @linksToPeers = {} # key -> {peerName: true...}
     @changedLinks = null
   createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
+  newPeer: -> @createPeer (con)-> new xus.Peer con
   processBatch: (con, batch)->
     @verbose "RECEIVED #{JSON.stringify batch}"
     for msg in batch

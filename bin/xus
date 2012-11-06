@@ -9,7 +9,19 @@
 
 # this uses socat and jshon
 
-STATE=$HOME/.xus/state
+BASE_DIR=$(dirname $(dirname $(realpath $0)))
+
+if [ -z "$NODE_PATH" ]; then
+    NODE_PATH="$NODE_PATH:$BASE_DIR/lib:$BASE_DIR/examples"
+else
+    export NODE_PATH="$BASE_DIR/lib:$BASE_DIR/examples"
+fi
+
+XUS_SAVED_PATH="${XUS_SAVED_PATH:-$PATH}"
+
+PATH="$XUS_SAVED_PATH:$BASE_DIR/bin:$BASE_DIR/examples"
+
+STATE="$HOME/.xus/state"
 
 usage() {
     cat <<EOF
@@ -192,7 +204,8 @@ list)
 start)
         name=$1
         shift
-        node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
+        #node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
+        node --no-deprecation -e "xus = require('main.js'); xus.run()" $name "$@"
         if [ $? != 2 ]; then
             removeEntry $name
         fi
