@@ -7,16 +7,14 @@ xus = require './peer'
 fs = require 'fs'
 path = require 'path'
 
-# 
-# 
-# 
-
 curDir = null
 
 module.exports.main = (master)->
   fs.realpath process.cwd(), (err, pth)->
     curDir = path.normalize pth
     peer = master.newPeer()
+    peer.set 'this/public/storage/list', '', 'transient'
+    peer.set 'this/public/storage/request', '', 'transient'
     peer.listen 'this/public/storage', (key, value)->
       console.log "GOT REQUEST: #{key.replace /^peer\/[^/]\/public\/storage\/(.*)$/, '$1'}, #{value}"
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
