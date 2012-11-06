@@ -244,11 +244,11 @@ exports.Server = class Server
       for p in @values[link]
         if !old[p]
           @addLink @peers[p], link
-          batch.push ['splice', "peers/#{p}/links", -1, 0, link]
+          batch.push ['splice', "peer/#{p}/links", -1, 0, link]
         else delete old[p]
       for p of old
         @removeLink @peers[p], link
-        batch.push ['removeAll', "peers/#{p}/links", link]
+        batch.push ['removeAll', "peer/#{p}/links", link]
     @processMsg con, cmd, cmd, true for cmd in batch
   addLink: (con, link)->
     if !@linksToPeers[link] then @linksToPeers[link] = {}
@@ -339,20 +339,20 @@ exports.Server = class Server
     if !@values[key]? && (index == 0 || index == -1) && del == 0
       @storageModes[key] = storage_memory
       @values[key] = []
-    if !(@values[key].splice? && @values[key].length?) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and length"
+    if !(@values[key]?.splice? && @values[key]?.length?) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and length"
     else
       if index < 0 then index = @values[key].length + index + 1
       @values[key].splice index, (cmd.slice 3)...
       true
   removeFirst: (con, [x, key, value])->
-    if !(@values[key].splice? && @values[key].indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
+    if !(@values[key]?.splice? && @values[key]?.indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else
       val = @values[key]
       idx = val.indexOf value
       if idx > -1 then val.splice idx, 1
       true
   removeAll: (con, [x, key, value])->
-    if !(@values[key].splice? && @values[key].indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
+    if !(@values[key]?.splice? && @values[key]?.indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1

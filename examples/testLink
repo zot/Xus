@@ -3,11 +3,17 @@
 # test peer links
 #
 
-echo '[["set", "this/links", ["fred"]]]' >&4
+echo '[["set", "this/links", ["fred", "joe"]]]' >&4
 echo '[["value", "fred", null, false]]' >&4
 read line <&3
 echo "Fred = $line"
-echo '[["set", "this/links", ["fred", "joe"]]]' >&4
 echo '[["value", "joe", null, false]]' >&4
 read line <&3
 echo "Joe = $line"
+echo '[["removeAll", "fred", "'$XUS_PEER'"]]' >&4
+echo '[["value", "fred", null, false]]' >&4
+read line <&3
+echo "Fred = $line"
+echo '[["value", "this/links", null, false]]' >&4
+read line <&3
+echo "this/links = $line"

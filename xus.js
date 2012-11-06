@@ -709,14 +709,14 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
           p = _ref[_i];
           if (!old[p]) {
             this.addLink(this.peers[p], link);
-            batch.push(['splice', "peers/" + p + "/links", -1, 0, link]);
+            batch.push(['splice', "peer/" + p + "/links", -1, 0, link]);
           } else {
             delete old[p];
           }
         }
         for (p in old) {
           this.removeLink(this.peers[p], link);
-          batch.push(['removeAll', "peers/" + p + "/links", link]);
+          batch.push(['removeAll', "peer/" + p + "/links", link]);
         }
       }
       _results = [];
@@ -901,27 +901,27 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     };
 
     Server.prototype.splice = function(con, _arg, cmd) {
-      var del, index, key, x, _ref;
+      var del, index, key, x, _ref, _ref1, _ref2;
       x = _arg[0], key = _arg[1], index = _arg[2], del = _arg[3];
       if (!(this.values[key] != null) && (index === 0 || index === -1) && del === 0) {
         this.storageModes[key] = storage_memory;
         this.values[key] = [];
       }
-      if (!((this.values[key].splice != null) && (this.values[key].length != null))) {
+      if (!((((_ref = this.values[key]) != null ? _ref.splice : void 0) != null) && (((_ref1 = this.values[key]) != null ? _ref1.length : void 0) != null))) {
         return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and length");
       } else {
         if (index < 0) {
           index = this.values[key].length + index + 1;
         }
-        (_ref = this.values[key]).splice.apply(_ref, [index].concat(__slice.call(cmd.slice(3))));
+        (_ref2 = this.values[key]).splice.apply(_ref2, [index].concat(__slice.call(cmd.slice(3))));
         return true;
       }
     };
 
     Server.prototype.removeFirst = function(con, _arg) {
-      var idx, key, val, value, x;
+      var idx, key, val, value, x, _ref, _ref1;
       x = _arg[0], key = _arg[1], value = _arg[2];
-      if (!((this.values[key].splice != null) && this.values[key].indexOf)) {
+      if (!((((_ref = this.values[key]) != null ? _ref.splice : void 0) != null) && ((_ref1 = this.values[key]) != null ? _ref1.indexOf : void 0))) {
         return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and indexOf");
       } else {
         val = this.values[key];
@@ -934,9 +934,9 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     };
 
     Server.prototype.removeAll = function(con, _arg) {
-      var idx, key, val, value, x;
+      var idx, key, val, value, x, _ref, _ref1;
       x = _arg[0], key = _arg[1], value = _arg[2];
-      if (!((this.values[key].splice != null) && this.values[key].indexOf)) {
+      if (!((((_ref = this.values[key]) != null ? _ref.splice : void 0) != null) && ((_ref1 = this.values[key]) != null ? _ref1.indexOf : void 0))) {
         return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and indexOf");
       } else {
         val = this.values[key];

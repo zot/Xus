@@ -33,9 +33,15 @@ gains a few advantages, because it can use special types of value.
   error if the name is already in use.
 * **this/listen  = array:**  an array  of the  keys  this peer  is
   listening to
-* **this/links = array:** an array of keys in which this peer's
-  name will be inserted.  If this peer's name is removed from one of
-  those arrays, the key name will be removed from **this/links**
+* **this/links = array of keys (strings):** link the peer's name to
+    some keys (which must be arrays)
+   * This can help with defining services
+   * Xus will automatically insert the peer's name into into the keys
+   * When this peer's name is removed from one of those keys, Xus will
+     automatically removed the key from **this/links**
+   * When the peer disconnects, Xus automatically removes its name from
+     its linked keys
+   * Xus publishes the inserts/removes
 * **this/public = any:** other peers can only listen to and change
   **this/public** and its descendants; other peer keys are private
 * **this/master = boolean:** if this is true, when the peer
