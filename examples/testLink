@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# test peer links
+#
+
+echo '[["set", "this/links", ["fred"]]]' >&4
+echo '[["value", "fred", null, false]]' >&4
+read line <&3
+echo "Fred = $line"
+echo '[["set", "this/links", ["fred", "joe"]]]' >&4
+echo '[["value", "joe", null, false]]' >&4
+read line <&3
+echo "Joe = $line"

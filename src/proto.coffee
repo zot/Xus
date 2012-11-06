@@ -111,6 +111,8 @@ exports.Server = class Server
     @values = {}
     @keys = []
     @storageModes = {} # keys and their storage modes
+    @linksToPeers = {} # key -> {peerName: true...}
+    @changedLinks = null
   createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
   processBatch: (con, batch)->
     @verbose "RECEIVED #{JSON.stringify batch}"
@@ -122,20 +124,32 @@ exports.Server = class Server
     if @newListens
       @setListens con
       @newListens = false
+    if @newConLinks
+      @setLinks con
+      @newConLinks = false
+    if @changedLinks
+      @processLinks(con, @changedLinks)
+      @changedLinks = null
     c.send() for c in @connections
-  processMsg: (con, [name, key], msg)->
-    @verbose "Xus add connection"
+  processMsg: (con, [name, key], msg, noLinks)->
     if con.isConnected()
       if name in cmds
-        isSetter = name in setCmds
-        if typeof key is 'string' then key = msg[1] = key.replace new RegExp('^this/'), "peer/#{con.name}/"
-        if key.match("^peer/") && !key.match("^#{con.peerPath}/") && !key.match("^peer/[^/]+/public")
+        if typeof key is 'string' then key = msg[1] = key.replace new RegExp('^this/'), "#{con.peerPath}/"
+        isMyPeerKey = key.match("^#{con.peerPath}/")
+        if !isMyPeerKey && !noLinks && key.match("^peer/") && !key.match("^.*/public(/|$)")
           @disconnect con, error_private_variable, "Error, #{con.name} (key = #{key}, peerPath = #{con.peerPath}, match = #{key.match("^#{con.peerPath}")}) attempted to change another peer's private variable: '#{key}' in message: #{JSON.stringify msg}"
         else
-          if isSetter and key is con.listenPath then @newListens = true
-          if (@[name] con, msg, msg) and isSetter
-            if key == "#{con.peerPath}/name" then @name con, msg[2]
-            else if key == "#{con.peerPath}/master" then @setMaster con, msg[2]
+          if isMyPeerKey
+            switch key
+              when con.listenPath then @newListens = true
+              when !noLinks && con.linksPath then @newConLinks = true
+          if !noLinks && @linksToPeers[key]
+            if !@changedLinks then @changedLinks = {}
+            @changedLinks[key] = true
+          if (@[name] con, msg, msg) and name in setCmds
+            @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @values[key]}"
+            if key == "#{con.namePath}" then @name con, msg[2]
+            else if key == "#{con.masterPath}" then @setMaster con, msg[2]
             @addCmd c, msg for c in @relevantConnections prefixes key
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
@@ -146,18 +160,22 @@ exports.Server = class Server
   setConName: (con, name)->
     con.name = name
     con.peerPath = "peer/#{name}"
+    con.namePath = "#{con.peerPath}/name"
     con.listenPath = "#{con.peerPath}/listen"
+    con.linksPath = "#{con.peerPath}/links"
+    con.masterPath = "#{con.peerPath}/master"
     @peers[name] = con
-    @values["#{con.peerPath}/name"] = name
+    @values[con.namePath] = name
   addConnection: (con)->
     @verbose "Xus add connection"
     @setConName con, "@anonymous-#{@anonymousPeerCount++}"
     con.listening = {}
+    con.links = {}
     @connections.push con
     @values[con.listenPath] = []
     con.addCmd ['set', 'this/name', con.name]
     con.send()
-  renamePeerVars: (con, oldName, newName)->
+  renamePeerKeys: (con, oldName, newName)->
     [@keys] = renameVars @keys, @values, oldName, newName
     newCL = {}
     newVL = []
@@ -173,7 +191,9 @@ exports.Server = class Server
   disconnect: (con, errorType, msg)->
     idx = @connections.indexOf con
     if idx > -1
-      peerKey = "peer/#{con.name}"
+      @values[con.linksPath] = []
+      @setLinks con
+      peerKey = "#{con.peerPath}"
       peerKeys = @keysForPrefix peerKey
       if con.name then delete @peers[con.name]
       @removeKey key for key in peerKeys # this could be more efficient, but does it matter?
@@ -202,6 +222,41 @@ exports.Server = class Server
       if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', path, null, true]
       old[path] = true
     @values[con.listenPath] = finalListen
+  setLinks: (con)->
+    filter = {}
+    batch = []
+    old = {}
+    old[l] = true for l of con.links
+    for l in @values[con.linksPath]
+      if !old[l]
+        @addLink con, l
+        batch.push ['splice', l, -1, 0, con.name]
+      else delete old[l]
+    for l of old
+      @removeLink con, l
+      batch.push ['removeAll', l, con.name]
+    @processMsg con, cmd, cmd, true for cmd in batch
+  processLinks: (con, changed)->
+    batch = []
+    for link of changed
+      old = {}
+      old[l] = true for l of @linksToPeers[link]
+      for p in @values[link]
+        if !old[p]
+          @addLink @peers[p], link
+          batch.push ['splice', "peers/#{p}/links", -1, 0, link]
+        else delete old[p]
+      for p of old
+        @removeLink @peers[p], link
+        batch.push ['removeAll', "peers/#{p}/links", link]
+    @processMsg con, cmd, cmd, true for cmd in batch
+  addLink: (con, link)->
+    if !@linksToPeers[link] then @linksToPeers[link] = {}
+    @linksToPeers[link][con.name] = con.links[link] = true
+  removeLink: (con, link)->
+    delete con.links[link]
+    delete @linksToPeers[link]?[con.name]
+    if @linksToPeers[link] && !@linksToPeers[link].length then delete @linksToPeers[link]
   error: (con, errorType, msg)->
     con.addCmd ['error', errorType, msg]
     false
@@ -216,13 +271,13 @@ exports.Server = class Server
     con.addCmd cmd
   getValue: (key, value)->
     if typeof value == 'function' then value()
-    else if !value and (parent = getParentFunction key) then parent(value, index)
+    else if !value and (parent = @getParentFunction key) then parent(value, index)
     else value
   # handle set, put, and splice -- for splice, value will be null
   setValue: (key, value, index)->
     old = @values[key]
     if typeof old == 'function' then old(value, index)
-    else if !old and (parent = getParentFunction key) then parent(value, index)
+    else if !old and (parent = @getParentFunction key) then parent(value, index)
     else
       if index? then @values[key][index] = value
       else @values[key] = value
@@ -241,7 +296,7 @@ exports.Server = class Server
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"
     else
       delete @peers[con.name]
-      @renamePeerVars con, con.name, name
+      @renamePeerKeys con, con.name, name
       @setConName con, name
       con.addCmd ['set', 'this/name', name]
   setMaster: (con, value)->

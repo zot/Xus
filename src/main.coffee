@@ -78,6 +78,7 @@ startXus = (config, httpServer, thenBlock)->
   exports.xusServer = xusServer = new Server()
   xusServer.exit = -> process.exit()
   xusServer.verbose = config.verbose
+  xusServer.verbose "Starting Xus"
   exports.connectXus xusServer, httpServer
   thenBlock xusServer
 
