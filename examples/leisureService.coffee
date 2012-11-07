@@ -14,48 +14,60 @@ module.exports.main = (master)->
     curDir = path.normalize pth
     peer = master.newPeer()
     peer.set 'this/public/storage/list', '', 'transient'
-    peer.set 'this/public/storage/request', '', 'transient'
+    peer.set 'this/public/storage/retrieve', '', 'transient'
+    peer.set 'this/public/storage/store', '', 'transient'
     peer.listen 'this/public/storage', (key, value)->
-      console.log "GOT REQUEST: #{key.replace /^peer\/[^/]\/public\/storage\/(.*)$/, '$1'}, #{value}"
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
-        when 'request' then requestFile peer, value
+        when 'retrieve' then retrieveFile peer, value
         when 'list' then listFiles peer, value
+        when 'store' then storeFile peer, value
     peer.set 'this/links', ['leisure/storage']
 
-requestFile = (peer, [responseKey, id, file])->
-  if responseKey.match(/^peer\/[^/]\/public/) || !responseKey.match /^peer\//
-    fs.realpath path.resolve(curDir, file), (err, pth)->
-      if !err && path.normalize(file) == file
-        fs.readFile pth, (err, data)->
-          if err then peer.set responseKey, [id, false, "Bad file: #{file}"]
-          else
-            console.log "Sending file: [#{id}, true, #{JSON.stringify data.toString()}]"
-            peer.set responseKey, [id, true, data.toString()]
-      else
-        peer.set responseKey, [id, false, "Bad path: #{file}"]
+checkDangerous = (file, block)->
+  if path.normalize(path.resolve(curDir, file)) == path.join(curDir, file) then block()
+  else block "Bad file: #{file}"
 
-listFiles = (peer, [responseKey, id])->
-  output = []
-  addFile peer, curDir, output, (err)->
-    if err then peer.set responseKey, [id, false, "Error listing files"]
-    else
-      console.log "SENDING FILE LIST: #{JSON.stringify [id, true, output[1..]]}"
+sendResult = (key, id, result)-> peer.set responseKey, [id, true, result]
+createCheck = (peer, responseKey, id, file)->(block)->(err, args...)->
+  if err then peer.set responseKey, [id, false, "Bad path: #{file}"]
+  else block args...
+
+retrieveFile = (peer, [responseKey, id, file])->
+  check = createCheck peer, responseKey, id, file
+  if responseKey.match(/^peer\/[^/]\/public/) || !responseKey.match /^peer\//
+    checkDangerous file, check ->
+      fs.realpath path.resolve(curDir, file), check (pth)->
+        fs.readFile pth, check (data)->
+          peer.verbose "Sending file: [#{id}, true, #{JSON.stringify data.toString()}]"
+          peer.set responseKey, [id, true, data.toString()]
+
+storeFile = (peer, [responseKey, id, file, contents])->
+  check = createCheck peer, responseKey, id, file
+  if responseKey.match(/^peer\/[^/]\/public/) || !responseKey.match /^peer\//
+    checkDangerous file, check ->
+      pth = path.normalize(path.resolve(curDir, file))
+      fs.writeFile pth, contents, check ->
+        peer.verbose "Sending file: [#{id}, true, #{JSON.stringify contents.toString()}]"
+        peer.set responseKey, [id, true]
+
+listFiles = (peer, [responseKey, id, file])->
+  check = createCheck peer, responseKey, id, file
+  checkDangerous file, check ->
+    output = []
+    addFile peer, check, curDir, output, ->
+      peer.verbose "SENDING FILE LIST: #{JSON.stringify [id, true, output[1..]]}"
       peer.set responseKey, [id, true, output[1..]]
 
-addFile = (peer, file, output, block)->
-  fs.lstat file, (err, stats)->
-    if err then block err
-    else
-      output.push file
-      if stats.isDirectory()
-        fs.readdir file, (err, files)->
-          if err then block(err)
-          else addFiles peer, files, output, block
-      else block()
+addFile = (peer, check, file, output, block)->
+  fs.lstat file, check (stats)->
+    output.push file
+    if stats.isDirectory()
+      fs.readdir file, check (files)->
+        addFiles peer, check, files, output, block
+    else block()
 
-addFiles = (peer, files, output, block)->
+addFiles = (peer, check, files, output, block)->
   if !files.length then block()
   else
-    addFile peer, files[0], output, (err)->
-      if err then block(err)
-      else addFiles peer, files[1...], output, block
+    addFile peer, check, files[0], output, check ->
+      addFiles peer, check, files[1...], output, block
