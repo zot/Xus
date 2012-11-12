@@ -25,9 +25,14 @@ _ = require './lodash.min'
 
 ####
 # cmds is a list of commands a peer can send
+#
+# Response is a special command that responds when Xus sends it a 'request' command
+#
+# Request format: ['request', peerName, requestId, cmd]
+# Response format: ['response', requestId, cmd]
 ####
 
-cmds = ['value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
+cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
 
 ####
 # Commands
@@ -63,6 +68,8 @@ exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll']
 
 # warning_no_storage doesn't disconnect, but the changes are only affect memory
 warning_no_storage = 'warning_no_storage'
+# warning_bad_peer_request doesn't disconnect, but indicates a problem with a peer request
+warning_peer_request = 'warning_peer_request'
 
 # errors cause disconnect
 error_bad_message = 'error_bad_message'
@@ -72,6 +79,7 @@ error_variable_not_array = 'error_variable_not_array'
 error_duplicate_peer_name = 'error_duplicate_peer_name'
 error_private_variable = 'error_private_variable'
 error_bad_master = 'error_bad_master'
+error_bad_peer_request = 'error_bad_peer_request'
 
 ####
 # STORAGE MODES FOR VARIABLES
@@ -83,8 +91,12 @@ storage_memory = 'memory'
 storage_transient = 'transient'
 # permanent: values are store in permanent storage, like a database
 storage_permanent = 'permanent'
+# peer: 'value' and change commands are delegated to the peer that owns them
+# only legal for public peer variables
+# note that the peer has the power to disconnect the requester if it returns an error
+storage_peer = 'peer'
 
-storageModes = [storage_transient, storage_memory, storage_permanent]
+storageModes = [storage_transient, storage_memory, storage_permanent, storage_peer]
 
 ####
 # SERVER CLASS -- Xus server objects understand the Xus protocol
@@ -113,6 +125,8 @@ exports.Server = class Server
     @storageModes = {} # keys and their storage modes
     @linksToPeers = {} # key -> {peerName: true...}
     @changedLinks = null
+    @pendingRequests = {}
+    @pendingRequestNum = 0
   createPeer: (peerFactory)-> exports.createDirectPeer @, peerFactory
   newPeer: -> @createPeer (con)-> new xus.Peer con
   processBatch: (con, batch)->
@@ -147,13 +161,20 @@ exports.Server = class Server
           if !noLinks && @linksToPeers[key]
             if !@changedLinks then @changedLinks = {}
             @changedLinks[key] = true
-          if (@[name] con, msg, msg) and name in setCmds
+          if name in setCmds and @shouldDelegate con, key then @delegate con, msg
+          else if (@[name] con, msg, msg) and name in setCmds
             @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @values[key]}"
             if key == "#{con.namePath}" then @name con, msg[2]
             else if key == "#{con.masterPath}" then @setMaster con, msg[2]
             @addCmd c, msg for c in @relevantConnections prefixes key
             if @storageModes[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
+  shouldDelegate: (con, key)->
+    if @isPeerVar key
+      match = key.match /^peer\/([^/]+)\//
+      @peers[match[1]] != con
+    else false
+  isPeerVar: (key)-> _.any(prefixes(key), (k)=> @storageModes[k] is storage_peer)
   addCmd: (con, msg)->
     (msg[k] = @getValue k, v) for v, k in msg
     con.addCmd msg
@@ -165,6 +186,7 @@ exports.Server = class Server
     con.listenPath = "#{con.peerPath}/listen"
     con.linksPath = "#{con.peerPath}/links"
     con.masterPath = "#{con.peerPath}/master"
+    con.requests = {}
     @peers[name] = con
     @values[con.namePath] = name
   addConnection: (con)->
@@ -202,6 +224,7 @@ exports.Server = class Server
       if msg then @error con, errorType, msg
       con.send()
       con.close()
+      delete @pendingRequests[num] for num in con.requests
       if con is @master then @exit()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
@@ -267,13 +290,25 @@ exports.Server = class Server
     idx = _.search key, @keys
     if idx > -1 then @keys.splice idx, 1
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    for key in @keysForPrefix path
-      cmd.push key, @getValue(key, @values[key])
-    con.addCmd cmd
+    if @isPeerVar path then @delegate con, [cmd]
+    else
+      for key in @keysForPrefix path
+        cmd.push key, @getValue(key, @values[key])
+      con.addCmd cmd
   getValue: (key, value)->
     if typeof value == 'function' then value()
     else if !value and (parent = @getParentFunction key) then parent(value, index)
     else value
+  # delegation
+  delegate: (con, cmd)->
+    [x, key] = cmd
+    if match = key.match /^peer\/([^/]+)\//
+      peer = @peers[match[1]]
+      num = @pendingRequestNum++
+      peer.requests[num] = true
+      @pendingRequests[num] = [peer, con]
+      peer.addCmd ['request', con.name, num, cmd]
+    else @error con, error_bad_peer_request, "Bad request: #{cmd}"
   # handle set, put, and splice -- for splice, value will be null
   setValue: (key, value, index)->
     old = @values[key]
@@ -358,6 +393,14 @@ exports.Server = class Server
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       true
+  response: (con, [x, id, cmd])->
+    [peer, receiver] = @pendingRequests[id]
+    delete @pendingRequests[id]
+    if peer != con then @disconnect peer, error_bad_peer_request, "Attempt to responsd to an invalid request"
+    else if cmd?
+      [cmdName, key, arg] = cmd
+      if cmdName is 'error' and key is error_bad_peer_request then @disconnect receiver, key, arg
+      else receiver.addCmd cmd
 
 exports.renameVars = renameVars = (keys, values, oldName, newName)->
   oldPrefix = "peer/#{oldName}"
@@ -374,13 +417,14 @@ exports.renameVars = renameVars = (keys, values, oldName, newName)->
   [keys, trans]
 
 keysForPrefix = (keys, values, prefix)->
-  keys = []
-  idx = _.search prefix, keys
+  initialPattern = "^#{prefix}(/|$)"
+  result = []
+  idx = _.find [0...keys.length], (i)-> keys[i].match initialPattern
   if idx > -1
     prefixPattern = "^#{prefix}/"
-    if values[prefix]? then keys.push prefix
-    (if values[prefix]? then keys.push keys[idx]) while keys[++idx] && keys[idx].match prefixPattern
-  keys
+    if values[prefix]? then result.push prefix
+    (if values[prefix]? then result.push keys[idx]) while keys[++idx]?.match prefixPattern
+  result
 
 caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p]
 

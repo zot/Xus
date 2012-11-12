@@ -13,9 +13,7 @@ module.exports.main = (master)->
   fs.realpath process.cwd(), (err, pth)->
     curDir = path.normalize pth
     peer = master.newPeer()
-    peer.set 'this/public/storage/list', '', 'transient'
-    peer.set 'this/public/storage/retrieve', '', 'transient'
-    peer.set 'this/public/storage/store', '', 'transient'
+    peer.set 'this/public/storage', '', 'peer'
     peer.listen 'this/public/storage', (key, value)->
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
         when 'retrieve' then retrieveFile peer, value
