@@ -24,33 +24,9 @@ exports.Peer = class Peer
     block()
     @inTransaction = false
     @con.send()
-  realListen: (key, simulateSetsForTree, noChildren, callback)->
-    key = key.replace /^this\//, "peer/#{@name}/"
-    if typeof simulateSetsForTree == 'function'
-      noChildren = simulateSetsForTree
-      simulateSetsForTree = false
-    if typeof noChildren == 'function'
-      callback = noChildren
-      noChildren = false
-    if noChildren then callback = (changedKey, value, oldValue, cmd, batch)->
-      if key == changedKey then callback changedKey, value, oldValue, cmd, batch
-    if @peerName? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@peerName}"
-    if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
-    if !@changeListeners[key]
-      @changeListeners[key] = []
-      @grabTree key, (msg, batch)=>
-        if simulateSetsForTree then @sendTreeSets @setsForTree(msg), callback
-        else callback key, (if msg[4] is key then msg[5] else null), null, msg, batch
-        @changeListeners[key].push callback
-      @splice "this/listen", -1, 0, key
-    else @tree key, simulateSetsForTree, callback
-  listen: (args...)-> # the initial @listen -- on connect, this switches to @realListen
+  listen: (args...)->
+    # This is the initial @listen -- after connect, switches to connectedPeerMethods.listen
     @queuedListeners.push args
-  switchListen: -> # called on connect, by the initial @processBatch
-    @listen = @realListen
-    for cmd in @queuedListeners
-      @listen cmd...
-    @queuedListeners = null
   name: (n)-> @addCmd ['name', n]
   value: (key, cookie, isTree, callback)->
     @grabTree key, callback
@@ -60,49 +36,18 @@ exports.Peer = class Peer
   splice: (key, spliceArgs...)-> @addCmd ['splice', key, spliceArgs...]
   removeFirst: (key, value)-> @addCmd ['removeFirst', key, value]
   removeAll: (key, value)-> @addCmd ['removeAll', key, value]
+  manage: (key, handler)->
   # INTERNAL API
-  realProcessBatch: (con, batch)->
-    @verbose "Peer batch: #{JSON.stringify batch}"
-    numKeys = @keys.length
-    oldValues = {}
-    for cmd in batch
-      [name, key, value, index] = cmd
-      if name in setCmds then oldValues[key] = @values[key]
-      switch name
-        when 'name' then @rename key
-        when 'set' then @values[key] = value
-        when 'put' then @values[key][index] = value
-        when 'insert'
-          if index < 0 then index = @values[key].length + 1 + index
-          @values[key] = @values[key].splice(index, 0, value)
-        when 'removeFirst'
-          idx = @values[key].indexOf value
-          if idx > -1 then @values[key] = @values[key].splice(index, 1)
-        when 'removeAll' then @values[key] = _.without @values[key], value
-        when 'value'
-          for k, i in cmd[4..] by 2
-            if !@values[k]? then @keys.push k
-            @values[k] = cmd[i]
-          if l = @valueListeners[k]
-            delete @valueListeners[k]
-            block cmd for block in l
-        when 'error'
-          [name, type, msg] = cmd
-          console.log msg
-      if name in setCmds && !oldValues[key] then @keys.push key
-    if numKeys != @keys.length then @keys.sort()
-    for cmd in batch
-      [name, key, value, index] = cmd
-      if name in setCmds then block(key, @values[key], oldValues[key], cmd, batch) for block in @listenersFor key
-      else if name == 'value' && @treeListeners[key]
-        cb cmd, batch for cb in @treeListeners[key]
-        delete @treeListeners[key]
   processBatch: (con, batch)->
+    # This is the initial @processBatch -- after connect, switches to connectedPeerMethods.processBatch
     if batch[0][0] == 'set' and batch[0][1] == 'this/name'
       @name = batch[0][2]
-      @processBatch = @realProcessBatch
-      @switchListen()
-      @realProcessBatch con, batch[1..]
+      @[k] = v for k,v of connectedPeerMethods
+      for cmd in @queuedListeners
+        @listen cmd...
+      @queuedListeners = null
+      # processBatch was redefined, above
+      @processBatch con, batch[1..]
   # PRIVATE
   rename: (newName)->
     newPath = "peer/#{newName}"
@@ -149,6 +94,64 @@ exports.Peer = class Peer
   disconnect: -> @con.close()
   listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
 
+connectedPeerMethods =
+  processBatch: (con, batch)->
+    @verbose "Peer batch: #{JSON.stringify batch}"
+    numKeys = @keys.length
+    oldValues = {}
+    for cmd in batch
+      [name, key, value, index] = cmd
+      if name in setCmds then oldValues[key] = @values[key]
+      switch name
+        when 'name' then @rename key
+        when 'set' then @values[key] = value
+        when 'put' then @values[key][index] = value
+        when 'insert'
+          if index < 0 then index = @values[key].length + 1 + index
+          @values[key] = @values[key].splice(index, 0, value)
+        when 'removeFirst'
+          idx = @values[key].indexOf value
+          if idx > -1 then @values[key] = @values[key].splice(index, 1)
+        when 'removeAll' then @values[key] = _.without @values[key], value
+        when 'value'
+          for k, i in cmd[4..] by 2
+            if !@values[k]? then @keys.push k
+            @values[k] = cmd[i]
+          if l = @valueListeners[k]
+            delete @valueListeners[k]
+            block cmd for block in l
+        when 'error'
+          [name, type, msg] = cmd
+          console.log msg
+      if name in setCmds && !oldValues[key] then @keys.push key
+    if numKeys != @keys.length then @keys.sort()
+    for cmd in batch
+      [name, key, value, index] = cmd
+      if name in setCmds then block(key, @values[key], oldValues[key], cmd, batch) for block in @listenersFor key
+      else if name == 'value' && @treeListeners[key]
+        cb cmd, batch for cb in @treeListeners[key]
+        delete @treeListeners[key]
+  listen: (key, simulateSetsForTree, noChildren, callback)->
+    key = key.replace /^this\//, "peer/#{@name}/"
+    if typeof simulateSetsForTree == 'function'
+      noChildren = simulateSetsForTree
+      simulateSetsForTree = false
+    if typeof noChildren == 'function'
+      callback = noChildren
+      noChildren = false
+    if noChildren then callback = (changedKey, value, oldValue, cmd, batch)->
+      if key == changedKey then callback changedKey, value, oldValue, cmd, batch
+    if @peerName? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@peerName}"
+    if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
+    if !@changeListeners[key]
+      @changeListeners[key] = []
+      @grabTree key, (msg, batch)=>
+        if simulateSetsForTree then @sendTreeSets @setsForTree(msg), callback
+        else callback key, (if msg[4] is key then msg[5] else null), null, msg, batch
+        @changeListeners[key].push callback
+      @splice "this/listen", -1, 0, key
+    else @tree key, simulateSetsForTree, callback
+
 ####
 #
 # createDirectPeer xus, factory -- make a peer with an in-process connection to xus
@@ -180,3 +183,13 @@ class DirectConnection
       @ctx.server.verbose "#{d @} SENDING #{@name}, #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @otherMaster.processBatch @otherConnection, q
+
+class DelegationHandler
+  constructor: (@peer)->
+    @values = {}
+  value: (reqId, cmd)->
+  set: (reqId, cmd)->
+  put: (reqId, cmd)->
+  splice: (reqId, cmd)->
+  removeFirst: (reqId, cmd)->
+  removeAll: (reqId, cmd)->

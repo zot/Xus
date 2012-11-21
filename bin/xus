@@ -239,7 +239,7 @@ run)
 ;;
 set) [ -n "$3" ] && subCmd send-cmd "$1" '[["set", "'$2'", '$3']]' || usage
 ;;
-put) [ -n "$3" ] && subCmd send-cmd "$1" '[["put", "'$2'", '$3', "'$4'"]]' || usage
+put) [ -n "$3" ] && subCmd send-cmd "$1" '[["put", "'$2'", '$4', "'$3'"]]' || usage
 ;;
 splice)
         if [ -z "$4" ]; then
@@ -265,9 +265,9 @@ get) [ -n "$2" ] && subCmd get-cmd "$@" || usage
 ;;
 listen) [ -n "$2" ] && subCmd listen-cmd "$@" || usage
 ;;
-removeFirst)
+removeFirst) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeFirst", "'$2'", '$3']]' || usage
 ;;
-removeAll)
+removeAll) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeAll", "'$2'", '$3']]' || usage
 ;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
