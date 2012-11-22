@@ -4,7 +4,11 @@
 ####
 
 {d} = exports = module.exports = require './base'
-{setCmds, prefixes} = require './proto'
+{
+  setCmds,
+  prefixes,
+  VarStorage
+} = require './proto'
 _ = require './lodash.min'
 
 exports.Peer = class Peer
@@ -12,11 +16,10 @@ exports.Peer = class Peer
     @inTransaction = false
     @changeListeners = {}
     @treeListeners = {}
-    @values = {}
-    @keys = []
     @valueListeners = {}
     @queuedListeners = []
     @name = null # this is set on connect, by the original @processBatch
+    @varStorage = new VarStorage @
   verbose: ->
   # API UTILS
   transaction: (block)->
@@ -25,6 +28,7 @@ exports.Peer = class Peer
     @inTransaction = false
     @con.send()
   listen: (args...)->
+    # IMPORTANT!
     # This is the initial @listen -- after connect, switches to connectedPeerMethods.listen
     @queuedListeners.push args
   name: (n)-> @addCmd ['name', n]
@@ -39,6 +43,7 @@ exports.Peer = class Peer
   manage: (key, handler)->
   # INTERNAL API
   processBatch: (con, batch)->
+    # IMPORTANT!
     # This is the initial @processBatch -- after connect, switches to connectedPeerMethods.processBatch
     if batch[0][0] == 'set' and batch[0][1] == 'this/name'
       @name = batch[0][2]
@@ -54,7 +59,7 @@ exports.Peer = class Peer
     thisPat = new RegExp "^this(?=/|$)"
     oldName = @peerName ? 'this'
     @peerName = newName
-    exports.renameVars @keys, @values, oldName, newName
+    exports.renameVars @varStorage.keys, @varStorage.values, oldName, newName
     t = {}
     for k, v of @treeListeners
       t[k.replace thisPat, newPath] = v
@@ -64,24 +69,24 @@ exports.Peer = class Peer
       c[k.replace thisPat, newPath] = v
     @changeListeners = c
     listen = "peer/#{newName}/listen"
-    if @values[listen]
+    if @varStorage.values[listen]
       oldPat = new RegExp "^peer/#{oldName}(?=/|$)"
-      @values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
+      @varStorage.values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
   sendTreeSets: (sets, callback)->
     for msg in sets
       [x, k, v] = msg
       callback k, v, null, msg, sets
   tree: (key, simulate, callback)->
     prefix = "^#{key}(/|$)"
-    idx = _.search @keys, key
+    idx = _.sortedIndex @varStorage.keys, key
     if simulate
       msgs = []
-      msgs.push ['set', @keys[idx], @values[@keys[idx]]] while @keys[idx].match prefix
+      msgs.push ['set', @varStorage.keys[idx], @varStorage.values[@varStorage.keys[idx]]] while @varStorage.keys[idx].match prefix
       @sendTreeSets msgs, callback
     else
       msg = ['value', key, null, true]
-      while @keys[idx].match prefix
-        msg.push @keys[idx], @values[@keys[idx]]
+      while @varStorage.keys[idx].match prefix
+        msg.push @varStorage.keys[idx], @varStorage.values[@varStorage.keys[idx]]
       callback null, null, null, msg, [msg]
   setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg[4..] by 2
   grabTree: (key, callback)->
@@ -93,44 +98,49 @@ exports.Peer = class Peer
     if !@inTransaction then @con.send()
   disconnect: -> @con.close()
   listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
+  handleDelegation: (name, num, cmd)->
+    # Override this for your own custom behavior
+    @varStorage.handle cmd
 
 connectedPeerMethods =
   processBatch: (con, batch)->
     @verbose "Peer batch: #{JSON.stringify batch}"
-    numKeys = @keys.length
+    numKeys = @varStorage.keys.length
     oldValues = {}
     for cmd in batch
       [name, key, value, index] = cmd
-      if name in setCmds then oldValues[key] = @values[key]
+      if name in setCmds then oldValues[key] = @varStorage.values[key]
       switch name
         when 'name' then @rename key
-        when 'set' then @values[key] = value
-        when 'put' then @values[key][index] = value
+        when 'set' then @varStorage.values[key] = value
+        when 'put' then @varStorage.values[key][index] = value
         when 'insert'
-          if index < 0 then index = @values[key].length + 1 + index
-          @values[key] = @values[key].splice(index, 0, value)
+          if index < 0 then index = @varStorage.values[key].length + 1 + index
+          @varStorage.values[key] = @varStorage.values[key].splice(index, 0, value)
         when 'removeFirst'
-          idx = @values[key].indexOf value
-          if idx > -1 then @values[key] = @values[key].splice(index, 1)
-        when 'removeAll' then @values[key] = _.without @values[key], value
+          idx = @varStorage.values[key].indexOf value
+          if idx > -1 then @varStorage.values[key] = @varStorage.values[key].splice(index, 1)
+        when 'removeAll' then @varStorage.values[key] = _.without @varStorage.values[key], value
         when 'value'
           for k, i in cmd[4..] by 2
-            if !@values[k]? then @keys.push k
-            @values[k] = cmd[i]
+            if !@varStorage.values[k]? then @varStorage.keys.push k
+            @varStorage.values[k] = cmd[i]
           if l = @valueListeners[k]
             delete @valueListeners[k]
             block cmd for block in l
         when 'error'
           [name, type, msg] = cmd
           console.log msg
-      if name in setCmds && !oldValues[key] then @keys.push key
-    if numKeys != @keys.length then @keys.sort()
+        when 'request' then @handleDelegation name, num, cmd
+      if name in setCmds && !oldValues[key] then @varStorage.keys.push key
+    if numKeys != @varStorage.keys.length then @varStorage.keys.sort()
     for cmd in batch
       [name, key, value, index] = cmd
-      if name in setCmds then block(key, @values[key], oldValues[key], cmd, batch) for block in @listenersFor key
+      if name in setCmds then block(key, @varStorage.values[key], oldValues[key], cmd, batch) for block in @listenersFor key
       else if name == 'value' && @treeListeners[key]
         cb cmd, batch for cb in @treeListeners[key]
         delete @treeListeners[key]
+    null
   listen: (key, simulateSetsForTree, noChildren, callback)->
     key = key.replace /^this\//, "peer/#{@name}/"
     if typeof simulateSetsForTree == 'function'

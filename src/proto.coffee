@@ -121,8 +121,6 @@ exports.Server = class Server
     @connections = []
     @peers = {}
     @varStorage = new VarStorage
-    #@values = {}
-    #@varStorage.keys = []
     @storageModes = {} # keys and their storage modes
     @linksToPeers = {} # key -> {peerName: true...}
     @changedLinks = null
@@ -134,9 +132,7 @@ exports.Server = class Server
     @verbose "RECEIVED #{JSON.stringify batch}"
     for msg in batch
       @processMsg con, msg, msg
-    if @newKeys
-      @newKeys = false
-      @varStorage.keys.sort()
+    @varStorage.sortKeys()
     if @newListens
       @setListens con
       @newListens = false
@@ -162,20 +158,20 @@ exports.Server = class Server
           if !noLinks && @linksToPeers[key]
             if !@changedLinks then @changedLinks = {}
             @changedLinks[key] = true
-          if name in setCmds and @shouldDelegate con, key then @delegate con, msg
+          if name != 'response' and @shouldDelegate con, key then @delegate con, msg
           else if (@[name] con, msg, msg) and name in setCmds
             @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @varStorage.values[key]}"
-            if key == "#{con.namePath}" then @name con, msg[2]
-            else if key == "#{con.masterPath}" then @setMaster con, msg[2]
+            if key == con.namePath then @name con, msg[2]
+            else if key == con.masterPath then @setMaster con, msg[2]
             c.addCmd msg for c in @relevantConnections prefixes key
-            if @storageModes[key] is storage_permanent then @store con, key, value
+            if @varStorage.keyInfo[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   shouldDelegate: (con, key)->
     if @isPeerVar key
       match = key.match /^peer\/([^/]+)\//
       @peers[match[1]] != con
     else false
-  isPeerVar: (key)-> _.any(prefixes(key), (k)=> @storageModes[k] is storage_peer)
+  isPeerVar: (key)-> _.any(prefixes(key), (k)=> @varStorage.keyInfo[k] is storage_peer)
   relevantConnections: (keyPrefixes)-> _.filter @connections, (c)-> caresAbout c, keyPrefixes
   setConName: (con, name)->
     con.name = name
@@ -186,14 +182,14 @@ exports.Server = class Server
     con.masterPath = "#{con.peerPath}/master"
     con.requests = {}
     @peers[name] = con
-    @varStorage.values[con.namePath] = name
+    @varStorage.setKey con.namePath, name
   addConnection: (con)->
     @verbose "Xus add connection"
     @setConName con, "@anonymous-#{@anonymousPeerCount++}"
     con.listening = {}
     con.links = {}
     @connections.push con
-    @varStorage.values[con.listenPath] = []
+    @varStorage.setKey con.listenPath, []
     con.addCmd ['set', 'this/name', con.name]
     con.send()
   renamePeerKeys: (con, oldName, newName)->
@@ -208,16 +204,16 @@ exports.Server = class Server
       newVL.push l
     con.listening = newCL
     newVL.sort()
-    @varStorage.values["#{newPrefix}/listen"] = newVL
+    @varStorage.setKey "#{newPrefix}/listen", newVL
   disconnect: (con, errorType, msg)->
     idx = @connections.indexOf con
     if idx > -1
-      @varStorage.values[con.linksPath] = []
+      @varStorage.setKey con.linksPath, []
       @setLinks con
-      peerKey = "#{con.peerPath}"
-      peerKeys = @keysForPrefix peerKey
+      peerKey = con.peerPath
+      peerKeys = @varStorage.keysForPrefix peerKey
       if con.name then delete @peers[con.name]
-      @removeKey key for key in peerKeys # this could be more efficient, but does it matter?
+      @varStorage.removeKey key for key in peerKeys # this could be more efficient, but does it matter?
       @connections.splice idx, 1
       if msg then @error con, errorType, msg
       con.send()
@@ -227,7 +223,6 @@ exports.Server = class Server
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
   exit: -> console.log "No custom exit function"
-  keysForPrefix: (pref)-> keysForPrefix @varStorage.keys, @varStorage.values, pref
   setListens: (con)->
     thisPath = new RegExp "^this/"
     conPath = "#{con.peerPath}/"
@@ -243,7 +238,7 @@ exports.Server = class Server
       con.listening[path] = true
       if _.all prefixes(path), ((p)->!old[p]) then @sendTree con, path, ['value', path, null, true]
       old[path] = true
-    @varStorage.values[con.listenPath] = finalListen
+    @varStorage.setKey con.listenPath, finalListen
   setLinks: (con)->
     filter = {}
     batch = []
@@ -282,18 +277,8 @@ exports.Server = class Server
   error: (con, errorType, msg)->
     con.addCmd ['error', errorType, msg]
     false
-  removeKey: (key)->
-    delete @storageModes[key]
-    delete @varStorage.values[key]
-    idx = _.search key, @varStorage.keys
-    if idx > -1 then @varStorage.keys.splice idx, 1
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    if @isPeerVar path then @delegate con, [cmd]
-    else
-      for key in @keysForPrefix path
-        cmd.push key, @getValue(key)
-      con.addCmd cmd
-  getValue: (key)-> @varStorage.handle ['get',key]
+    con.addCmd @varStorage.valueTree(con, path, cmd)
   # delegation
   delegate: (con, cmd)->
     [x, key] = cmd
@@ -323,78 +308,114 @@ exports.Server = class Server
   remove: (con, key)-> # do nothing, for now
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
-  value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
-    if tree then @sendTree con, key, cmd
+  # value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
+  #   if @isPeerVar key then @delegate con, [cmd]
+  #     else if tree then @sendTree con, key, cmd
+  #     else
+  #       if (value = @varStorage.handle ['get', key])? then cmd.push key, value
+  #       con.addCmd cmd
+  value: (con, [x, key], cmd)-> # cookie, courtesy of Shlomi
+    if @isPeerVar key then @delegate con, [cmd]
     else
-      if @varStorage.values[key]? || @varStorage.handlers[key]? then cmd.push key, @getValue(key)
+      @varStorage.value con, cmd
       con.addCmd cmd
+      true
   set: (con, [x, key, value, storageMode], cmd)->
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else if @varStorage.values[key] is value then false
     else
-      if storageMode and storageMode isnt @storageModes[key] and @storageModes[key] is storage_permanent
+      if storageMode and storageMode isnt @varStorage.keyInfo[key] and @varStorage.keyInfo[key] is storage_permanent
         @remove con, key
-      if (storageMode || @storageModes[key]) isnt storage_transient
-        if !@storageModes[key]
+      if (storageMode || @varStorage.keyInfo[key]) isnt storage_transient
+        if !@varStorage.keyInfo[key]
           storageMode = storageMode || storage_memory
           @varStorage.keys.push key
           @newKeys = true
-        value = @handleStorageCommand con, cmd
-      if storageMode then @storageModes[key] = storageMode
+        @handleStorageCommand con, cmd
+      if storageMode then @varStorage.keyInfo[key] = storageMode
       cmd[2] = value
       true
   put: (con, [x, key, value, index], cmd)->
-    if !@varStorage.values[key] || typeof @varStorage.values[key] != 'object' then @disconnect con, error_variable_not_object, "Can't put with #{key} because it is not an object"
-    else
-      @handleStorageCommand con, cmd
-      true
-  splice: (con, [x, key, index, del], cmd)->
-    if !@varStorage.values[key]? && (index == 0 || index == -1) && del == 0
-      @storageModes[key] = storage_memory
-      @varStorage.values[key] = []
-    if !(@varStorage.values[key]?.splice? && @varStorage.values[key]?.length?) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and length"
-    else
-      @handleStorageCommand con, cmd
-      true
-  handleStorageCommand: (con, cmd)-> @varStorage.handle cmd, (type, msg)-> @disconnect con, type, msg
+    @handleStorageCommand con, cmd
+    true
+  splice: (con, [x, key, index, del, items...], cmd)->
+    @handleStorageCommand con, cmd
+    true
   removeFirst: (con, [x, key, value], cmd)->
-    if !(@varStorage.values[key]?.splice? && @varStorage.values[key]?.indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
+    if !@varStorage.canRemove(key) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else
       @handleStorageCommand con, cmd
       true
   removeAll: (con, [x, key, value], cmd)->
-    if !(@varStorage.values[key]?.splice? && @varStorage.values[key]?.indexOf) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
-    else
-      @handleStorageCommand con, cmd
-      true
+    @handleStorageCommand con, cmd
+    true
+  handleStorageCommand: (con, cmd)-> @varStorage.handle cmd, (type, msg)=> @disconnect con, type, msg
   response: (con, [x, id, cmd])->
     [peer, receiver] = @pendingRequests[id]
     delete @pendingRequests[id]
     if peer != con then @disconnect peer, error_bad_peer_request, "Attempt to responsd to an invalid request"
-    else if cmd?
-      [cmdName, key, arg] = cmd
-      if cmdName is 'error' and key is error_bad_peer_request then @disconnect receiver, key, arg
-      else receiver.addCmd cmd
+    else
+      delete peer.requests[id]
+      if cmd?
+        [cmdName, key, arg] = cmd
+        if cmdName is 'error' and key is error_bad_peer_request then @disconnect receiver, key, arg
+        else if cmdName in ['error', 'value'] then receiver.addCmd cmd
+        else c.addCmd msg for c in @relevantConnections prefixes key
 
 exports.VarStorage = class VarStorage
   constructor: ->
     @keys = []
     @values = {}
     @handlers = {}
+    @keyInfo = {}
+    @newKeys = false
   handle: ([cmd, key, args...], errBlock)-> @handlerFor(key)[cmd] [cmd, key, args...], errBlock
   handlerFor: (key)->
     k = _.find prefixes(key), (p)=> @handlers[p]
     res = if k then @handlers[k] else @
     res
-  get: (key)-> @values[key]
-  set: ([x, key, value])->
+  addKey: (key, info)->
+    if !@keyInfo[key]
+      @newKeys = true
+      @keyInfo[key] = info
+      @keys.push key
+  sortKeys: ->
+    if @newKeys
+      @keys.sort()
+      @newKeys = false
+  setKey: (key, value, info)->
     if typeof value == 'function'
       h = @handlers[key] = new BasicVarHandler @
       h.put = h.set = h.get = (args...)-> value args...
     else @values[key] = value
+    @addKey key, info || storage_memory
+  removeKey: (key)->
+    delete @keyInfo[key]
+    delete @varStorage.values[key]
+    idx = _.sortedIndex key, @keys
+    if idx > -1 then @keys.splice idx, 1
+  isObject: (key)-> typeof @values[key] == 'object'
+  canSplice: (key)-> !@values[key] ||(@values[key].splice? && @values[key].length?)
+  canRemove: (key)-> canSplice(key) && @values[key].indexOf?
+  contains: (key)-> @values[key]?
+  # access to vars
+  value: (con, cmd)->
+    [x, path, cookie, tree] = cmd
+    if tree
+      for key in @keysForPrefix path
+        cmd.push key, @handle(['get',key])
+    else if (value = @handle(['get', path]))? then cmd.push path, value
+    cmd
+  valueTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
+    for key in @keysForPrefix path
+      cmd.push key, @handle(['get',key])
+    cmd
+  keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
+  get: ([x, key])-> @values[key]
+  set: ([x, key, value, info])-> @setKey key, value, info
   put: ([x, key, value, index], errBlock)->
     if !@values[key] then @values[key] = {}
-    else if typeof @values[key] != 'object' or @values[key] instanceof Array then errBlock error_variable_not_object "#{key} is not an object"
+    if typeof @values[key] != 'object' or @values[key] instanceof Array then errBlock error_variable_not_object "#{key} is not an object"
     else @values[key][index] = value
   splice: ([x, key, args...], errBlock)->
     if !@values[key] then @values[key] = []
@@ -450,18 +471,3 @@ exports.prefixes = prefixes = (key)->
     result.push splitKey.join '/'
     splitKey.pop()
   result
-
-# binarySearch -- seach a sorted array for a key
-# returns the position of the smallest item >= key or array.length, if none
-# This is the correct position to insert the item and maintain sorted order
-
-_.search = (key, arr)->
-  if arr.length == 0 then return 0
-  left = 0
-  right = arr.length - 1
-  while left < right
-    mid = Math.floor (left + right) / 2
-    if arr[mid] is key then return mid
-    else if arr[mid] < key then left = mid + 1
-    else right = mid - 1
-  if arr[left] < key then left + 1 else left

@@ -487,10 +487,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         msg = batch[_i];
         this.processMsg(con, msg, msg);
       }
-      if (this.newKeys) {
-        this.newKeys = false;
-        this.varStorage.keys.sort();
-      }
+      this.varStorage.sortKeys();
       if (this.newListens) {
         this.setListens(con);
         this.newListens = false;
@@ -539,13 +536,13 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
               }
               this.changedLinks[key] = true;
             }
-            if (__indexOf.call(setCmds, name) >= 0 && this.shouldDelegate(con, key)) {
+            if (name !== 'response' && this.shouldDelegate(con, key)) {
               return this.delegate(con, msg);
             } else if ((this[name](con, msg, msg)) && __indexOf.call(setCmds, name) >= 0) {
               this.verbose("CMD: " + (JSON.stringify(msg)) + ", VALUE: " + (JSON.stringify(this.varStorage.values[key])));
-              if (key === ("" + con.namePath)) {
+              if (key === con.namePath) {
                 this.name(con, msg[2]);
-              } else if (key === ("" + con.masterPath)) {
+              } else if (key === con.masterPath) {
                 this.setMaster(con, msg[2]);
               }
               _ref = this.relevantConnections(prefixes(key));
@@ -553,7 +550,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
                 c = _ref[_i];
                 c.addCmd(msg);
               }
-              if (this.storageModes[key] === storage_permanent) {
+              if (this.varStorage.keyInfo[key] === storage_permanent) {
                 return this.store(con, key, value);
               }
             }
@@ -577,7 +574,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     Server.prototype.isPeerVar = function(key) {
       var _this = this;
       return _.any(prefixes(key), function(k) {
-        return _this.storageModes[k] === storage_peer;
+        return _this.varStorage.keyInfo[k] === storage_peer;
       });
     };
 
@@ -596,7 +593,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       con.masterPath = "" + con.peerPath + "/master";
       con.requests = {};
       this.peers[name] = con;
-      return this.varStorage.values[con.namePath] = name;
+      return this.varStorage.setKey(con.namePath, name);
     };
 
     Server.prototype.addConnection = function(con) {
@@ -605,7 +602,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       con.listening = {};
       con.links = {};
       this.connections.push(con);
-      this.varStorage.values[con.listenPath] = [];
+      this.varStorage.setKey(con.listenPath, []);
       con.addCmd(['set', 'this/name', con.name]);
       return con.send();
     };
@@ -624,23 +621,23 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       }
       con.listening = newCL;
       newVL.sort();
-      return this.varStorage.values["" + newPrefix + "/listen"] = newVL;
+      return this.varStorage.setKey("" + newPrefix + "/listen", newVL);
     };
 
     Server.prototype.disconnect = function(con, errorType, msg) {
       var idx, key, num, peerKey, peerKeys, _i, _j, _len, _len1, _ref;
       idx = this.connections.indexOf(con);
       if (idx > -1) {
-        this.varStorage.values[con.linksPath] = [];
+        this.varStorage.setKey(con.linksPath, []);
         this.setLinks(con);
-        peerKey = "" + con.peerPath;
-        peerKeys = this.keysForPrefix(peerKey);
+        peerKey = con.peerPath;
+        peerKeys = this.varStorage.keysForPrefix(peerKey);
         if (con.name) {
           delete this.peers[con.name];
         }
         for (_i = 0, _len = peerKeys.length; _i < _len; _i++) {
           key = peerKeys[_i];
-          this.removeKey(key);
+          this.varStorage.removeKey(key);
         }
         this.connections.splice(idx, 1);
         if (msg) {
@@ -662,10 +659,6 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
 
     Server.prototype.exit = function() {
       return console.log("No custom exit function");
-    };
-
-    Server.prototype.keysForPrefix = function(pref) {
-      return keysForPrefix(this.varStorage.keys, this.varStorage.values, pref);
     };
 
     Server.prototype.setListens = function(con) {
@@ -692,7 +685,7 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
         }
         old[path] = true;
       }
-      return this.varStorage.values[con.listenPath] = finalListen;
+      return this.varStorage.setKey(con.listenPath, finalListen);
     };
 
     Server.prototype.setLinks = function(con) {
@@ -779,32 +772,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return false;
     };
 
-    Server.prototype.removeKey = function(key) {
-      var idx;
-      delete this.storageModes[key];
-      delete this.varStorage.values[key];
-      idx = _.search(key, this.varStorage.keys);
-      if (idx > -1) {
-        return this.varStorage.keys.splice(idx, 1);
-      }
-    };
-
     Server.prototype.sendTree = function(con, path, cmd) {
-      var key, _i, _len, _ref;
-      if (this.isPeerVar(path)) {
-        return this.delegate(con, [cmd]);
-      } else {
-        _ref = this.keysForPrefix(path);
-        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-          key = _ref[_i];
-          cmd.push(key, this.getValue(key));
-        }
-        return con.addCmd(cmd);
-      }
-    };
-
-    Server.prototype.getValue = function(key) {
-      return this.varStorage.handle(['get', key]);
+      return con.addCmd(this.varStorage.valueTree(con, path, cmd));
     };
 
     Server.prototype.delegate = function(con, cmd) {
@@ -852,15 +821,14 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     };
 
     Server.prototype.value = function(con, _arg, cmd) {
-      var cookie, key, tree, x;
-      x = _arg[0], key = _arg[1], cookie = _arg[2], tree = _arg[3];
-      if (tree) {
-        return this.sendTree(con, key, cmd);
+      var key, x;
+      x = _arg[0], key = _arg[1];
+      if (this.isPeerVar(key)) {
+        return this.delegate(con, [cmd]);
       } else {
-        if ((this.varStorage.values[key] != null) || (this.varStorage.handlers[key] != null)) {
-          cmd.push(key, this.getValue(key));
-        }
-        return con.addCmd(cmd);
+        this.varStorage.value(con, cmd);
+        con.addCmd(cmd);
+        return true;
       }
     };
 
@@ -872,19 +840,19 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       } else if (this.varStorage.values[key] === value) {
         return false;
       } else {
-        if (storageMode && storageMode !== this.storageModes[key] && this.storageModes[key] === storage_permanent) {
+        if (storageMode && storageMode !== this.varStorage.keyInfo[key] && this.varStorage.keyInfo[key] === storage_permanent) {
           this.remove(con, key);
         }
-        if ((storageMode || this.storageModes[key]) !== storage_transient) {
-          if (!this.storageModes[key]) {
+        if ((storageMode || this.varStorage.keyInfo[key]) !== storage_transient) {
+          if (!this.varStorage.keyInfo[key]) {
             storageMode = storageMode || storage_memory;
             this.varStorage.keys.push(key);
             this.newKeys = true;
           }
-          value = this.handleStorageCommand(con, cmd);
+          this.handleStorageCommand(con, cmd);
         }
         if (storageMode) {
-          this.storageModes[key] = storageMode;
+          this.varStorage.keyInfo[key] = storageMode;
         }
         cmd[2] = value;
         return true;
@@ -894,39 +862,21 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     Server.prototype.put = function(con, _arg, cmd) {
       var index, key, value, x;
       x = _arg[0], key = _arg[1], value = _arg[2], index = _arg[3];
-      if (!this.varStorage.values[key] || typeof this.varStorage.values[key] !== 'object') {
-        return this.disconnect(con, error_variable_not_object, "Can't put with " + key + " because it is not an object");
-      } else {
-        this.handleStorageCommand(con, cmd);
-        return true;
-      }
+      this.handleStorageCommand(con, cmd);
+      return true;
     };
 
     Server.prototype.splice = function(con, _arg, cmd) {
-      var del, index, key, x, _ref, _ref1;
-      x = _arg[0], key = _arg[1], index = _arg[2], del = _arg[3];
-      if (!(this.varStorage.values[key] != null) && (index === 0 || index === -1) && del === 0) {
-        this.storageModes[key] = storage_memory;
-        this.varStorage.values[key] = [];
-      }
-      if (!((((_ref = this.varStorage.values[key]) != null ? _ref.splice : void 0) != null) && (((_ref1 = this.varStorage.values[key]) != null ? _ref1.length : void 0) != null))) {
-        return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and length");
-      } else {
-        this.handleStorageCommand(con, cmd);
-        return true;
-      }
-    };
-
-    Server.prototype.handleStorageCommand = function(con, cmd) {
-      return this.varStorage.handle(cmd, function(type, msg) {
-        return this.disconnect(con, type, msg);
-      });
+      var del, index, items, key, x;
+      x = _arg[0], key = _arg[1], index = _arg[2], del = _arg[3], items = 5 <= _arg.length ? __slice.call(_arg, 4) : [];
+      this.handleStorageCommand(con, cmd);
+      return true;
     };
 
     Server.prototype.removeFirst = function(con, _arg, cmd) {
-      var key, value, x, _ref, _ref1;
+      var key, value, x;
       x = _arg[0], key = _arg[1], value = _arg[2];
-      if (!((((_ref = this.varStorage.values[key]) != null ? _ref.splice : void 0) != null) && ((_ref1 = this.varStorage.values[key]) != null ? _ref1.indexOf : void 0))) {
+      if (!this.varStorage.canRemove(key)) {
         return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and indexOf");
       } else {
         this.handleStorageCommand(con, cmd);
@@ -935,29 +885,43 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
     };
 
     Server.prototype.removeAll = function(con, _arg, cmd) {
-      var key, value, x, _ref, _ref1;
+      var key, value, x;
       x = _arg[0], key = _arg[1], value = _arg[2];
-      if (!((((_ref = this.varStorage.values[key]) != null ? _ref.splice : void 0) != null) && ((_ref1 = this.varStorage.values[key]) != null ? _ref1.indexOf : void 0))) {
-        return this.disconnect(con, error_variable_not_array, "Can't insert into " + key + " because it does not support splice and indexOf");
-      } else {
-        this.handleStorageCommand(con, cmd);
-        return true;
-      }
+      this.handleStorageCommand(con, cmd);
+      return true;
+    };
+
+    Server.prototype.handleStorageCommand = function(con, cmd) {
+      var _this = this;
+      return this.varStorage.handle(cmd, function(type, msg) {
+        return _this.disconnect(con, type, msg);
+      });
     };
 
     Server.prototype.response = function(con, _arg) {
-      var arg, cmd, cmdName, id, key, peer, receiver, x, _ref;
+      var arg, c, cmd, cmdName, id, key, peer, receiver, x, _i, _len, _ref, _ref1, _results;
       x = _arg[0], id = _arg[1], cmd = _arg[2];
       _ref = this.pendingRequests[id], peer = _ref[0], receiver = _ref[1];
       delete this.pendingRequests[id];
       if (peer !== con) {
         return this.disconnect(peer, error_bad_peer_request, "Attempt to responsd to an invalid request");
-      } else if (cmd != null) {
-        cmdName = cmd[0], key = cmd[1], arg = cmd[2];
-        if (cmdName === 'error' && key === error_bad_peer_request) {
-          return this.disconnect(receiver, key, arg);
-        } else {
-          return receiver.addCmd(cmd);
+      } else {
+        delete peer.requests[id];
+        if (cmd != null) {
+          cmdName = cmd[0], key = cmd[1], arg = cmd[2];
+          if (cmdName === 'error' && key === error_bad_peer_request) {
+            return this.disconnect(receiver, key, arg);
+          } else if (cmdName === 'error' || cmdName === 'value') {
+            return receiver.addCmd(cmd);
+          } else {
+            _ref1 = this.relevantConnections(prefixes(key));
+            _results = [];
+            for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+              c = _ref1[_i];
+              _results.push(c.addCmd(msg));
+            }
+            return _results;
+          }
         }
       }
     };
@@ -972,6 +936,8 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       this.keys = [];
       this.values = {};
       this.handlers = {};
+      this.keyInfo = {};
+      this.newKeys = false;
     }
 
     VarStorage.prototype.handle = function(_arg, errBlock) {
@@ -990,31 +956,110 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       return res;
     };
 
-    VarStorage.prototype.get = function(key) {
-      return this.values[key];
+    VarStorage.prototype.addKey = function(key, info) {
+      if (!this.keyInfo[key]) {
+        this.newKeys = true;
+        this.keyInfo[key] = info;
+        return this.keys.push(key);
+      }
     };
 
-    VarStorage.prototype.set = function(_arg) {
-      var h, key, value, x;
-      x = _arg[0], key = _arg[1], value = _arg[2];
+    VarStorage.prototype.sortKeys = function() {
+      if (this.newKeys) {
+        this.keys.sort();
+        return this.newKeys = false;
+      }
+    };
+
+    VarStorage.prototype.setKey = function(key, value, info) {
+      var h;
       if (typeof value === 'function') {
         h = this.handlers[key] = new BasicVarHandler(this);
-        return h.put = h.set = h.get = function() {
+        h.put = h.set = h.get = function() {
           var args;
           args = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
           return value.apply(null, args);
         };
       } else {
-        return this.values[key] = value;
+        this.values[key] = value;
       }
+      return this.addKey(key, info || storage_memory);
+    };
+
+    VarStorage.prototype.removeKey = function(key) {
+      var idx;
+      delete this.keyInfo[key];
+      delete this.varStorage.values[key];
+      idx = _.sortedIndex(key, this.keys);
+      if (idx > -1) {
+        return this.keys.splice(idx, 1);
+      }
+    };
+
+    VarStorage.prototype.isObject = function(key) {
+      return typeof this.values[key] === 'object';
+    };
+
+    VarStorage.prototype.canSplice = function(key) {
+      return !this.values[key] || ((this.values[key].splice != null) && (this.values[key].length != null));
+    };
+
+    VarStorage.prototype.canRemove = function(key) {
+      return canSplice(key) && (this.values[key].indexOf != null);
+    };
+
+    VarStorage.prototype.contains = function(key) {
+      return this.values[key] != null;
+    };
+
+    VarStorage.prototype.value = function(con, cmd) {
+      var cookie, key, path, tree, value, x, _i, _len, _ref;
+      x = cmd[0], path = cmd[1], cookie = cmd[2], tree = cmd[3];
+      if (tree) {
+        _ref = this.keysForPrefix(path);
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          key = _ref[_i];
+          cmd.push(key, this.handle(['get', key]));
+        }
+      } else if ((value = this.handle(['get', path])) != null) {
+        cmd.push(path, value);
+      }
+      return cmd;
+    };
+
+    VarStorage.prototype.valueTree = function(con, path, cmd) {
+      var key, _i, _len, _ref;
+      _ref = this.keysForPrefix(path);
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        key = _ref[_i];
+        cmd.push(key, this.handle(['get', key]));
+      }
+      return cmd;
+    };
+
+    VarStorage.prototype.keysForPrefix = function(pref) {
+      return keysForPrefix(this.keys, this.values, pref);
+    };
+
+    VarStorage.prototype.get = function(_arg) {
+      var key, x;
+      x = _arg[0], key = _arg[1];
+      return this.values[key];
+    };
+
+    VarStorage.prototype.set = function(_arg) {
+      var info, key, value, x;
+      x = _arg[0], key = _arg[1], value = _arg[2], info = _arg[3];
+      return this.setKey(key, value, info);
     };
 
     VarStorage.prototype.put = function(_arg, errBlock) {
       var index, key, value, x;
       x = _arg[0], key = _arg[1], value = _arg[2], index = _arg[3];
       if (!this.values[key]) {
-        return this.values[key] = {};
-      } else if (typeof this.values[key] !== 'object' || this.values[key] instanceof Array) {
+        this.values[key] = {};
+      }
+      if (typeof this.values[key] !== 'object' || this.values[key] instanceof Array) {
         return errBlock(error_variable_not_object("" + key + " is not an object"));
       } else {
         return this.values[key][index] = value;
@@ -1147,30 +1192,6 @@ require.define("/proto.js",function(require,module,exports,__dirname,__filename,
       splitKey.pop();
     }
     return result;
-  };
-
-  _.search = function(key, arr) {
-    var left, mid, right;
-    if (arr.length === 0) {
-      return 0;
-    }
-    left = 0;
-    right = arr.length - 1;
-    while (left < right) {
-      mid = Math.floor((left + right) / 2);
-      if (arr[mid] === key) {
-        return mid;
-      } else if (arr[mid] < key) {
-        left = mid + 1;
-      } else {
-        right = mid - 1;
-      }
-    }
-    if (arr[left] < key) {
-      return left + 1;
-    } else {
-      return left;
-    }
   };
 
 }).call(this);
@@ -1698,13 +1719,13 @@ require.define("fs",function(require,module,exports,__dirname,__filename,process
 
 require.define("/peer.js",function(require,module,exports,__dirname,__filename,process){// Generated by CoffeeScript 1.3.3
 (function() {
-  var DelegationHandler, DirectConnection, Peer, connectedPeerMethods, d, exports, prefixes, setCmds, _, _ref,
+  var DelegationHandler, DirectConnection, Peer, VarStorage, connectedPeerMethods, d, exports, prefixes, setCmds, _, _ref,
     __slice = [].slice,
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   d = (exports = module.exports = require('./base')).d;
 
-  _ref = require('./proto'), setCmds = _ref.setCmds, prefixes = _ref.prefixes;
+  _ref = require('./proto'), setCmds = _ref.setCmds, prefixes = _ref.prefixes, VarStorage = _ref.VarStorage;
 
   _ = require('./lodash.min');
 
@@ -1715,11 +1736,10 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       this.inTransaction = false;
       this.changeListeners = {};
       this.treeListeners = {};
-      this.values = {};
-      this.keys = [];
       this.valueListeners = {};
       this.queuedListeners = [];
       this.name = null;
+      this.varStorage = new VarStorage(this);
     }
 
     Peer.prototype.verbose = function() {};
@@ -1794,7 +1814,7 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       thisPat = new RegExp("^this(?=/|$)");
       oldName = (_ref1 = this.peerName) != null ? _ref1 : 'this';
       this.peerName = newName;
-      exports.renameVars(this.keys, this.values, oldName, newName);
+      exports.renameVars(this.varStorage.keys, this.varStorage.values, oldName, newName);
       t = {};
       _ref2 = this.treeListeners;
       for (k in _ref2) {
@@ -1810,9 +1830,9 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       }
       this.changeListeners = c;
       listen = "peer/" + newName + "/listen";
-      if (this.values[listen]) {
+      if (this.varStorage.values[listen]) {
         oldPat = new RegExp("^peer/" + oldName + "(?=/|$)");
-        return this.values[listen] = (k.replace(oldPat, newPath)).replace(thisPat, newPath);
+        return this.varStorage.values[listen] = (k.replace(oldPat, newPath)).replace(thisPat, newPath);
       }
     };
 
@@ -1830,17 +1850,17 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
     Peer.prototype.tree = function(key, simulate, callback) {
       var idx, msg, msgs, prefix;
       prefix = "^" + key + "(/|$)";
-      idx = _.search(this.keys, key);
+      idx = _.sortedIndex(this.varStorage.keys, key);
       if (simulate) {
         msgs = [];
-        while (this.keys[idx].match(prefix)) {
-          msgs.push(['set', this.keys[idx], this.values[this.keys[idx]]]);
+        while (this.varStorage.keys[idx].match(prefix)) {
+          msgs.push(['set', this.varStorage.keys[idx], this.varStorage.values[this.varStorage.keys[idx]]]);
         }
         return this.sendTreeSets(msgs, callback);
       } else {
         msg = ['value', key, null, true];
-        while (this.keys[idx].match(prefix)) {
-          msg.push(this.keys[idx], this.values[this.keys[idx]]);
+        while (this.varStorage.keys[idx].match(prefix)) {
+          msg.push(this.varStorage.keys[idx], this.varStorage.values[this.varStorage.keys[idx]]);
         }
         return callback(null, null, null, msg, [msg]);
       }
@@ -1885,55 +1905,59 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
       }));
     };
 
+    Peer.prototype.handleDelegation = function(name, num, cmd) {
+      return this.varStorage.handle(cmd);
+    };
+
     return Peer;
 
   })();
 
   connectedPeerMethods = {
     processBatch: function(con, batch) {
-      var block, cb, cmd, i, idx, index, k, key, l, msg, name, numKeys, oldValues, type, value, _i, _j, _k, _l, _len, _len1, _len2, _len3, _len4, _m, _ref1, _ref2, _results, _step;
+      var block, cb, cmd, i, idx, index, k, key, l, msg, name, numKeys, oldValues, type, value, _i, _j, _k, _l, _len, _len1, _len2, _len3, _len4, _len5, _m, _n, _ref1, _ref2, _ref3, _step;
       this.verbose("Peer batch: " + (JSON.stringify(batch)));
-      numKeys = this.keys.length;
+      numKeys = this.varStorage.keys.length;
       oldValues = {};
       for (_i = 0, _len = batch.length; _i < _len; _i++) {
         cmd = batch[_i];
         name = cmd[0], key = cmd[1], value = cmd[2], index = cmd[3];
         if (__indexOf.call(setCmds, name) >= 0) {
-          oldValues[key] = this.values[key];
+          oldValues[key] = this.varStorage.values[key];
         }
         switch (name) {
           case 'name':
             this.rename(key);
             break;
           case 'set':
-            this.values[key] = value;
+            this.varStorage.values[key] = value;
             break;
           case 'put':
-            this.values[key][index] = value;
+            this.varStorage.values[key][index] = value;
             break;
           case 'insert':
             if (index < 0) {
-              index = this.values[key].length + 1 + index;
+              index = this.varStorage.values[key].length + 1 + index;
             }
-            this.values[key] = this.values[key].splice(index, 0, value);
+            this.varStorage.values[key] = this.varStorage.values[key].splice(index, 0, value);
             break;
           case 'removeFirst':
-            idx = this.values[key].indexOf(value);
+            idx = this.varStorage.values[key].indexOf(value);
             if (idx > -1) {
-              this.values[key] = this.values[key].splice(index, 1);
+              this.varStorage.values[key] = this.varStorage.values[key].splice(index, 1);
             }
             break;
           case 'removeAll':
-            this.values[key] = _.without(this.values[key], value);
+            this.varStorage.values[key] = _.without(this.varStorage.values[key], value);
             break;
           case 'value':
             _ref1 = cmd.slice(4);
             for (i = _j = 0, _len1 = _ref1.length, _step = 2; _j < _len1; i = _j += _step) {
               k = _ref1[i];
-              if (!(this.values[k] != null)) {
-                this.keys.push(k);
+              if (!(this.varStorage.values[k] != null)) {
+                this.varStorage.keys.push(k);
               }
-              this.values[k] = cmd[i];
+              this.varStorage.values[k] = cmd[i];
             }
             if (l = this.valueListeners[k]) {
               delete this.valueListeners[k];
@@ -1946,41 +1970,36 @@ require.define("/peer.js",function(require,module,exports,__dirname,__filename,p
           case 'error':
             name = cmd[0], type = cmd[1], msg = cmd[2];
             console.log(msg);
+            break;
+          case 'request':
+            this.handleDelegation(name, num, cmd);
         }
         if (__indexOf.call(setCmds, name) >= 0 && !oldValues[key]) {
-          this.keys.push(key);
+          this.varStorage.keys.push(key);
         }
       }
-      if (numKeys !== this.keys.length) {
-        this.keys.sort();
+      if (numKeys !== this.varStorage.keys.length) {
+        this.varStorage.keys.sort();
       }
-      _results = [];
       for (_l = 0, _len3 = batch.length; _l < _len3; _l++) {
         cmd = batch[_l];
         name = cmd[0], key = cmd[1], value = cmd[2], index = cmd[3];
         if (__indexOf.call(setCmds, name) >= 0) {
-          _results.push((function() {
-            var _len4, _m, _ref2, _results1;
-            _ref2 = this.listenersFor(key);
-            _results1 = [];
-            for (_m = 0, _len4 = _ref2.length; _m < _len4; _m++) {
-              block = _ref2[_m];
-              _results1.push(block(key, this.values[key], oldValues[key], cmd, batch));
-            }
-            return _results1;
-          }).call(this));
-        } else if (name === 'value' && this.treeListeners[key]) {
-          _ref2 = this.treeListeners[key];
+          _ref2 = this.listenersFor(key);
           for (_m = 0, _len4 = _ref2.length; _m < _len4; _m++) {
-            cb = _ref2[_m];
+            block = _ref2[_m];
+            block(key, this.varStorage.values[key], oldValues[key], cmd, batch);
+          }
+        } else if (name === 'value' && this.treeListeners[key]) {
+          _ref3 = this.treeListeners[key];
+          for (_n = 0, _len5 = _ref3.length; _n < _len5; _n++) {
+            cb = _ref3[_n];
             cb(cmd, batch);
           }
-          _results.push(delete this.treeListeners[key]);
-        } else {
-          _results.push(void 0);
+          delete this.treeListeners[key];
         }
       }
-      return _results;
+      return null;
     },
     listen: function(key, simulateSetsForTree, noChildren, callback) {
       var _ref1,
@@ -2127,6 +2146,11 @@ require.define("/browser.js",function(require,module,exports,__dirname,__filenam
   exports.xusToProxy = function(xus, url, verbose) {
     var proxy, sock;
     proxy = new ProxyMux(xus);
+    proxy.mainDisconnect = function(con) {
+      console.log("Disconnecting mux connection and closing");
+      window.open('', '_self', '');
+      return window.close();
+    };
     if (verbose != null) {
       proxy.verbose = log;
     }

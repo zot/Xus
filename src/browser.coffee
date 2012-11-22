@@ -13,6 +13,10 @@ if window.MozWebSocket then window.WebSocket = window.MozWebSocket
 
 exports.xusToProxy = (xus, url, verbose)->
   proxy = new ProxyMux xus
+  proxy.mainDisconnect = (con)->
+    console.log "Disconnecting mux connection and closing"
+    window.open '', '_self', ''
+    window.close()
   if verbose? then proxy.verbose = log
   sock = new WebSocket url
   sock.onopen = -> new WebSocketConnection proxy, sock
