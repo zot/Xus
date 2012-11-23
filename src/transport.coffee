@@ -85,7 +85,7 @@ exports.Connection = class Connection
   addCmd: (cmd)-> @q.push cmd
   send: ->
     if @connected && @q.length
-      @verbose "#{d @} SENDING #{@name}, #{JSON.stringify @q}"
+      @verbose "#{d @} SENDING #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @codec.send @, q
   newData: (data)-> @verbose "#{d @} read data: #{data}"; @codec.newData @, data
@@ -185,7 +185,11 @@ exports.ProxyMux = class ProxyMux
     endPoint
   newPeer: ->
     peer = new exports.Peer
-    peer.con = @newConnection (id)=> new XusEndpoint peer, @, id
+    console.log "SETTING CONNECTION"
+    # peer.setConnection @newConnection (id)=> new XusEndpoint peer, @, id
+    @newConnection (id)=>
+      peer.setConnection new XusEndpoint peer, @, id
+      peer
     @mainSend [['connect', peer.con.id]]
     peer.con.newconnection = false
     peer
@@ -211,7 +215,7 @@ exports.ProxyMux = class ProxyMux
           @removeConnection con
           con.disconnect()
       when 'data'
-        @verbose "MUX data"
+        @verbose "MUX data: #{JSON.stringify batch[1..]}"
     b = batch[1..]
     if b.length then @handler.processBatch con, b
   disconnect: (con)->
@@ -270,7 +274,7 @@ class ConnectionEndpoint # connected to an endpoint
 class XusEndpoint extends Connection # connected to an endpoint
   constructor: (@master, @proxy, @id)->
     super @master, @proxy
-    @verbose = @master.verbose
+    @verbose = @proxy.verbose
   newConnection: false
   basicClose: -> @proxy.disconnect @
   send: ->

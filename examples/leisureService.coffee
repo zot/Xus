@@ -10,10 +10,19 @@ path = require 'path'
 curDir = null
 
 module.exports.main = (master)->
+  console.log "Initializing Leisure Service"
   fs.realpath process.cwd(), (err, pth)->
     curDir = path.normalize pth
     peer = master.newPeer()
     peer.set 'this/public/storage', '', 'peer'
+    peer.afterConnect ->
+      peer.addHandler 'this/public/storage',
+        get: ([x, key], errBlock)->
+          console.log "SERVICE GET"
+          @verbose "SERVICE GET"
+          if m = key.match new RegExp 'peer/[^/]+/public/storage/(.*)$'
+            console.log "GET #{m[1]}"
+          errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
     peer.listen 'this/public/storage', (key, value)->
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
         when 'retrieve' then retrieveFile peer, value

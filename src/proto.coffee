@@ -120,7 +120,7 @@ exports.Server = class Server
   constructor: ->
     @connections = []
     @peers = {}
-    @varStorage = new VarStorage
+    @varStorage = new VarStorage @
     @storageModes = {} # keys and their storage modes
     @linksToPeers = {} # key -> {peerName: true...}
     @changedLinks = null
@@ -143,10 +143,12 @@ exports.Server = class Server
       @processLinks(con, @changedLinks)
       @changedLinks = null
     c.send() for c in @connections
-  processMsg: (con, [name, key], msg, noLinks)->
+  processMsg: (con, [name], msg, noLinks)->
     if con.isConnected()
       if name in cmds
-        if typeof key is 'string' then key = msg[1] = key.replace new RegExp('^this/'), "#{con.peerPath}/"
+        if name is 'response' then [x1, x2, tmpMsg] = msg else tmpMsg = msg
+        [x, key] = tmpMsg
+        if typeof key is 'string' then key = tmpMsg[1] = key.replace new RegExp('^this/'), "#{con.peerPath}/"
         isMyPeerKey = key.match("^#{con.peerPath}/")
         if !isMyPeerKey && !noLinks && key.match("^peer/") && !key.match("^.*/public(/|$)")
           @disconnect con, error_private_variable, "Error, #{con.name} (key = #{key}, peerPath = #{con.peerPath}, match = #{key.match("^#{con.peerPath}")}) attempted to change another peer's private variable: '#{key}' in message: #{JSON.stringify msg}"
@@ -278,11 +280,13 @@ exports.Server = class Server
     con.addCmd ['error', errorType, msg]
     false
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    con.addCmd @varStorage.valueTree(con, path, cmd)
+    @varStorage.handle cmd
+    con.addCmd cmd
   # delegation
   delegate: (con, cmd)->
     [x, key] = cmd
     if match = key.match /^peer\/([^/]+)\//
+      console.log "DELEGATING: #{JSON.stringify cmd}"
       peer = @peers[match[1]]
       num = @pendingRequestNum++
       peer.requests[num] = true
@@ -308,16 +312,10 @@ exports.Server = class Server
   remove: (con, key)-> # do nothing, for now
     @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
-  # value: (con, [x, key, cookie, tree], cmd)-> # cookie, courtesy of Shlomi
-  #   if @isPeerVar key then @delegate con, [cmd]
-  #     else if tree then @sendTree con, key, cmd
-  #     else
-  #       if (value = @varStorage.handle ['get', key])? then cmd.push key, value
-  #       con.addCmd cmd
   value: (con, [x, key], cmd)-> # cookie, courtesy of Shlomi
     if @isPeerVar key then @delegate con, [cmd]
     else
-      @varStorage.value con, cmd
+      @varStorage.value cmd
       con.addCmd cmd
       true
   set: (con, [x, key, value, storageMode], cmd)->
@@ -363,17 +361,20 @@ exports.Server = class Server
         else c.addCmd msg for c in @relevantConnections prefixes key
 
 exports.VarStorage = class VarStorage
-  constructor: ->
+  constructor: (@owner)->
     @keys = []
     @values = {}
     @handlers = {}
     @keyInfo = {}
     @newKeys = false
+  toString: -> "A VarStorage"
+  verbose: (args...)-> @owner.verbose args...
   handle: ([cmd, key, args...], errBlock)-> @handlerFor(key)[cmd] [cmd, key, args...], errBlock
   handlerFor: (key)->
     k = _.find prefixes(key), (p)=> @handlers[p]
-    res = if k then @handlers[k] else @
-    res
+    handler = if k then @handlers[k] else @
+    @verbose "STORAGE HANDLER FOR #{key}: #{handler}"
+    handler
   addKey: (key, info)->
     if !@keyInfo[key]
       @newKeys = true
@@ -385,8 +386,8 @@ exports.VarStorage = class VarStorage
       @newKeys = false
   setKey: (key, value, info)->
     if typeof value == 'function'
-      h = @handlers[key] = new BasicVarHandler @
-      h.put = h.set = h.get = (args...)-> value args...
+      obj = @addHandler key, put: (args...)-> value args...
+      obj.set = obj.get = obj.put
     else @values[key] = value
     @addKey key, info || storage_memory
   removeKey: (key)->
@@ -398,21 +399,28 @@ exports.VarStorage = class VarStorage
   canSplice: (key)-> !@values[key] ||(@values[key].splice? && @values[key].length?)
   canRemove: (key)-> canSplice(key) && @values[key].indexOf?
   contains: (key)-> @values[key]?
-  # access to vars
-  value: (con, cmd)->
+  keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
+  addHandler: (path, obj)->
+    @verbose "ADDING HANDLER FOR #{path}"
+    obj.__proto__ = @
+    obj.toString = -> "A Handler for #{path}"
+    @handlers[path] = obj
+    obj
+  # handler methods
+  value: (cmd, errBlock)->
     [x, path, cookie, tree] = cmd
     if tree
+      cont = true
+      blk = (type, msg)->
+        errBlock type, msg
+        cont = false
       for key in @keysForPrefix path
-        cmd.push key, @handle(['get',key])
-    else if (value = @handle(['get', path]))? then cmd.push path, value
+        if (v = @handle(['get',key], errBlock))? then cmd.push key, v
+        if !cont then return cmd
+    else if (value = @handle(['get', path], errBlock))? then cmd.push path, value
     cmd
-  valueTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    for key in @keysForPrefix path
-      cmd.push key, @handle(['get',key])
-    cmd
-  keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
-  get: ([x, key])-> @values[key]
-  set: ([x, key, value, info])-> @setKey key, value, info
+  get: ([x, key], errBlock)-> @values[key]
+  set: ([x, key, value, info], errBlock)-> @setKey key, value, info
   put: ([x, key, value, index], errBlock)->
     if !@values[key] then @values[key] = {}
     if typeof @values[key] != 'object' or @values[key] instanceof Array then errBlock error_variable_not_object "#{key} is not an object"
@@ -434,9 +442,6 @@ exports.VarStorage = class VarStorage
     else
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1
-
-exports.BasicVarHandler = class BasicVarHandler
-  constructor: (storage)-> if storage then @.__proto__ = storage
 
 exports.renameVars = renameVars = (keys, values, oldName, newName)->
   oldPrefix = "peer/#{oldName}"

@@ -12,7 +12,8 @@
 _ = require './lodash.min'
 
 exports.Peer = class Peer
-  constructor: (@con)->
+  constructor: (con)->
+    @setConnection con
     @inTransaction = false
     @changeListeners = {}
     @treeListeners = {}
@@ -20,13 +21,19 @@ exports.Peer = class Peer
     @queuedListeners = []
     @name = null # this is set on connect, by the original @processBatch
     @varStorage = new VarStorage @
-  verbose: ->
+    @pendingBlocks = []
+  afterConnect: (block)-> if @name then block() else @pendingBlocks.push block
+  setConnection: (@con)->
+    @verbose = @con?.verbose || (->)
+    console.log "ADDED CONNECTION: #{@con}, verbose: #{(@con?.verbose || (->)).toString()}"
+  #verbose: ->
   # API UTILS
   transaction: (block)->
     @inTransaction = true
     block()
     @inTransaction = false
     @con.send()
+  send: (batch)-> @processBatch @con, batch
   listen: (args...)->
     # IMPORTANT!
     # This is the initial @listen -- after connect, switches to connectedPeerMethods.listen
@@ -53,12 +60,13 @@ exports.Peer = class Peer
       @queuedListeners = null
       # processBatch was redefined, above
       @processBatch con, batch[1..]
+      block() for block in @pendingBlocks
   # PRIVATE
   rename: (newName)->
     newPath = "peer/#{newName}"
     thisPat = new RegExp "^this(?=/|$)"
-    oldName = @peerName ? 'this'
-    @peerName = newName
+    oldName = @name ? 'this'
+    @name = newName
     exports.renameVars @varStorage.keys, @varStorage.values, oldName, newName
     t = {}
     for k, v of @treeListeners
@@ -90,9 +98,10 @@ exports.Peer = class Peer
       callback null, null, null, msg, [msg]
   setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg[4..] by 2
   grabTree: (key, callback)->
-    if @peerName then key = key.replace new RegExp("^this(?=/|$)"), "peer/@peerName"
+    if @name then key = @personalize key
     if !@treeListeners[key] then @treeListeners[key] = []
     @treeListeners[key].push callback
+  personalize: (path)-> path.replace new RegExp('^this(?=\/|$)'), "peer/#{@name}"
   addCmd: (cmd)->
     @con.addCmd cmd
     if !@inTransaction then @con.send()
@@ -100,16 +109,23 @@ exports.Peer = class Peer
   listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
   handleDelegation: (name, num, cmd)->
     # Override this for your own custom behavior
-    @varStorage.handle cmd
+    @verbose "HANDLING DELEGATION: #{JSON.stringify [name, num, cmd]}"
+    @varStorage.handle cmd, (type, msg)-> cmd = ['error', type, msg]
+    @verbose "2"
+    @con.addCmd ['response', num, cmd]
+    @verbose "3"
+    @con.send()
+    @verbose "4"
+  addHandler: (path, obj)-> @varStorage.addHandler @personalize(path), obj
 
 connectedPeerMethods =
   processBatch: (con, batch)->
-    @verbose "Peer batch: #{JSON.stringify batch}"
+    @verbose "PEER BATCH: #{JSON.stringify batch}"
     numKeys = @varStorage.keys.length
     oldValues = {}
     for cmd in batch
       [name, key, value, index] = cmd
-      if name in setCmds then oldValues[key] = @varStorage.values[key]
+      if name in setCmds then oldValues[key] = @varStorage.handle ['get', key]
       switch name
         when 'name' then @rename key
         when 'set' then @varStorage.values[key] = value
@@ -131,7 +147,10 @@ connectedPeerMethods =
         when 'error'
           [name, type, msg] = cmd
           console.log msg
-        when 'request' then @handleDelegation name, num, cmd
+        when 'request'
+          console.log "GOT REQUEST: #{JSON.stringify cmd}, batch: #{JSON.stringify batch}"
+          [x, name, num, dcmd] = cmd
+          @handleDelegation name, num, dcmd
       if name in setCmds && !oldValues[key] then @varStorage.keys.push key
     if numKeys != @varStorage.keys.length then @varStorage.keys.sort()
     for cmd in batch
@@ -151,7 +170,7 @@ connectedPeerMethods =
       noChildren = false
     if noChildren then callback = (changedKey, value, oldValue, cmd, batch)->
       if key == changedKey then callback changedKey, value, oldValue, cmd, batch
-    if @peerName? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@peerName}"
+    if @name? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@name}"
     if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
     if !@changeListeners[key]
       @changeListeners[key] = []
@@ -174,6 +193,7 @@ exports.createDirectPeer = (xus, peerFactory)->
   xusConnection = new DirectConnection
   # the object that the peer uses as its connection
   peerConnection = new DirectConnection
+  peerConnection.verbose = xusConnection.verbose = xus.verbose
   peer = (peerFactory ? (con)-> new Peer con) peerConnection
   peerConnection.connect(xusConnection, xus, ctx)
   xusConnection.connect(peerConnection, peer, ctx)

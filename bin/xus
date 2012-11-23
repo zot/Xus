@@ -119,14 +119,19 @@ showVars() {
         key=true
     fi
     while [ $(echo "$batch" | jshon -l) != 0 ]; do
-        line="$(echo "$batch" | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
-        while [ $(echo "$line" | jshon -l) != 0 ]; do
-            if [ "$key" = true ]; then
-                echo -n "$(echo "$line" | jshon -e 0 -u) "
-            fi
-            echo "$line" | jshon -e 1
+        cmd="$(echo "$batch" | jshon -e 0 -e 0 -u)"
+        if [ "$cmd" = value ]; then
+            line="$(echo "$batch" | jshon -e 0 -d 0 -d 0 -d 0 -d 0)"
+            while [ $(echo "$line" | jshon -l) != 0 ]; do
+                if [ "$key" = true ]; then
+                    echo -n "$(echo "$line" | jshon -e 0 -u) "
+                fi
+                echo "$line" | jshon -e 1
             line=$(echo "$line" | jshon -d 0 -d 0)
-        done
+            done
+        elif [ "$cmd" = error ]; then
+            echo ERROR: $(echo "$batch" | jshon -e 0 | jshon -d 0 | jshon -a -u)
+        fi
         batch=$(echo "$batch" | jshon -d 0)
     done
 }
