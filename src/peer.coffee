@@ -109,53 +109,31 @@ exports.Peer = class Peer
   listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
   handleDelegation: (name, num, cmd)->
     # Override this for your own custom behavior
-    @verbose "HANDLING DELEGATION: #{JSON.stringify [name, num, cmd]}"
-    @varStorage.handle cmd, (type, msg)-> cmd = ['error', type, msg]
-    @verbose "2"
-    @con.addCmd ['response', num, cmd]
-    @verbose "3"
+    @varStorage.handle cmd, ((type, msg)=> @sendCmd ['error', type, msg]), => @sendCmd ['response', num, cmd]
+  sendCmd: (cmd)->
+    @con.addCmd cmd
     @con.send()
-    @verbose "4"
   addHandler: (path, obj)-> @varStorage.addHandler @personalize(path), obj
 
 connectedPeerMethods =
   processBatch: (con, batch)->
     @verbose "PEER BATCH: #{JSON.stringify batch}"
     numKeys = @varStorage.keys.length
-    oldValues = {}
     for cmd in batch
       [name, key, value, index] = cmd
-      if name in setCmds then oldValues[key] = @varStorage.handle ['get', key]
+      if name in setCmds and !@varStorage.contains key then @varStorage.keys.push key
+      # track updates and respond to requests
       switch name
-        when 'name' then @rename key
-        when 'set' then @varStorage.values[key] = value
-        when 'put' then @varStorage.values[key][index] = value
-        when 'insert'
-          if index < 0 then index = @varStorage.values[key].length + 1 + index
-          @varStorage.values[key] = @varStorage.values[key].splice(index, 0, value)
-        when 'removeFirst'
-          idx = @varStorage.values[key].indexOf value
-          if idx > -1 then @varStorage.values[key] = @varStorage.values[key].splice(index, 1)
-        when 'removeAll' then @varStorage.values[key] = _.without @varStorage.values[key], value
-        when 'value'
-          for k, i in cmd[4..] by 2
-            if !@varStorage.values[k]? then @varStorage.keys.push k
-            @varStorage.values[k] = cmd[i]
-          if l = @valueListeners[k]
-            delete @valueListeners[k]
-            block cmd for block in l
-        when 'error'
-          [name, type, msg] = cmd
-          console.log msg
+        when 'error' then console.log "ERROR '#{key}': value"
         when 'request'
           console.log "GOT REQUEST: #{JSON.stringify cmd}, batch: #{JSON.stringify batch}"
           [x, name, num, dcmd] = cmd
           @handleDelegation name, num, dcmd
-      if name in setCmds && !oldValues[key] then @varStorage.keys.push key
+        else @varStorage.handle cmd, ((type, msg)-> console.log "Error, '#{type}': #{msg}"), ->
     if numKeys != @varStorage.keys.length then @varStorage.keys.sort()
     for cmd in batch
       [name, key, value, index] = cmd
-      if name in setCmds then block(key, @varStorage.values[key], oldValues[key], cmd, batch) for block in @listenersFor key
+      if name in setCmds then block(key, @varStorage.values[key], cmd, batch) for block in @listenersFor key
       else if name == 'value' && @treeListeners[key]
         cb cmd, batch for cb in @treeListeners[key]
         delete @treeListeners[key]

@@ -161,12 +161,14 @@ exports.Server = class Server
             if !@changedLinks then @changedLinks = {}
             @changedLinks[key] = true
           if name != 'response' and @shouldDelegate con, key then @delegate con, msg
-          else if (@[name] con, msg, msg) and name in setCmds
-            @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @varStorage.values[key]}"
-            if key == con.namePath then @name con, msg[2]
-            else if key == con.masterPath then @setMaster con, msg[2]
-            c.addCmd msg for c in @relevantConnections prefixes key
-            if @varStorage.keyInfo[key] is storage_permanent then @store con, key, value
+          else
+            @[name] con, msg, =>
+              if name in setCmds
+                @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @varStorage.values[key]}"
+                if key == con.namePath then @name con, msg[2]
+                else if key == con.masterPath then @setMaster con, msg[2]
+                c.addCmd msg for c in @relevantConnections prefixes key
+                if @varStorage.keyInfo[key] is storage_permanent then @store con, key, value
       else @disconnect con, error_bad_message, "Unknown command, '#{name}' in message: #{JSON.stringify msg}"
   shouldDelegate: (con, key)->
     if @isPeerVar key
@@ -280,8 +282,7 @@ exports.Server = class Server
     con.addCmd ['error', errorType, msg]
     false
   sendTree: (con, path, cmd)-> # add values for path and all of its children to msg and send to con
-    @varStorage.handle cmd
-    con.addCmd cmd
+    @handleStorageCommand con, cmd, -> con.addCmd cmd
   # delegation
   delegate: (con, cmd)->
     [x, key] = cmd
@@ -306,49 +307,39 @@ exports.Server = class Server
     else
       @master = if value then con else null
       con.addCmd ['set', 'this/master', value]
-  # Storage methods -- have to be filled in by storage strategy
-  store: (con, key, value)-> # do nothing, for now
-    @error con, warning_no_storage, "Can't store #{key} = #{JSON.stringify value}, because no storage is configured"
-  remove: (con, key)-> # do nothing, for now
-    @error con, warning_no_storage, "Can't delete #{key}, because no storage is configured"
   # Commands
-  value: (con, [x, key], cmd)-> # cookie, courtesy of Shlomi
-    if @isPeerVar key then @delegate con, [cmd]
+  value: (con, cmd, cont)-> # cookie, courtesy of Shlomi
+    [x, key] = cmd
+    if @isPeerVar key then @delegate con, [cmd], cont
     else
-      @varStorage.value cmd
-      con.addCmd cmd
-      true
-  set: (con, [x, key, value, storageMode], cmd)->
+      @handleStorageCommand con, cmd, ->
+        con.addCmd cmd
+        cont()
+  set: (con, cmd, cont)->
+    [x, key, value, storageMode] = cmd
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else if @varStorage.values[key] is value then false
     else
       if storageMode and storageMode isnt @varStorage.keyInfo[key] and @varStorage.keyInfo[key] is storage_permanent
         @remove con, key
-      if (storageMode || @varStorage.keyInfo[key]) isnt storage_transient
+      @varStorage.keyInfo[key] = storageMode = storageMode || @varStorage.keyInfo[key] || storage_memory
+      if storageMode isnt storage_transient
         if !@varStorage.keyInfo[key]
-          storageMode = storageMode || storage_memory
           @varStorage.keys.push key
           @newKeys = true
-        @handleStorageCommand con, cmd
-      if storageMode then @varStorage.keyInfo[key] = storageMode
-      cmd[2] = value
-      true
-  put: (con, [x, key, value, index], cmd)->
-    @handleStorageCommand con, cmd
-    true
-  splice: (con, [x, key, index, del, items...], cmd)->
-    @handleStorageCommand con, cmd
-    true
-  removeFirst: (con, [x, key, value], cmd)->
+        @handleStorageCommand con, cmd, ->
+          cmd[2] = value
+          cont()
+      else cont()
+  put: (con, cmd, cont)-> @handleStorageCommand con, cmd, cont
+  splice: (con, cmd, cont)-> @handleStorageCommand con, cmd, cont
+  removeFirst: (con, cmd, cont)->
+    [x, key, value] = cmd
     if !@varStorage.canRemove(key) then @disconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
-    else
-      @handleStorageCommand con, cmd
-      true
-  removeAll: (con, [x, key, value], cmd)->
-    @handleStorageCommand con, cmd
-    true
-  handleStorageCommand: (con, cmd)-> @varStorage.handle cmd, (type, msg)=> @disconnect con, type, msg
-  response: (con, [x, id, cmd])->
+    else @handleStorageCommand con, cmd, cont
+  removeAll: (con, cmd, cont)-> @handleStorageCommand con, cmd, cont
+  response: (con, rcmd, cont)->
+    [x, id, cmd] = rcmd
     [peer, receiver] = @pendingRequests[id]
     delete @pendingRequests[id]
     if peer != con then @disconnect peer, error_bad_peer_request, "Attempt to responsd to an invalid request"
@@ -359,6 +350,8 @@ exports.Server = class Server
         if cmdName is 'error' and key is error_bad_peer_request then @disconnect receiver, key, arg
         else if cmdName in ['error', 'value'] then receiver.addCmd cmd
         else c.addCmd msg for c in @relevantConnections prefixes key
+      cont()
+  handleStorageCommand: (con, cmd, cont)-> @varStorage.handle cmd, ((type, msg)=> @disconnect con, type, msg), cont
 
 exports.VarStorage = class VarStorage
   constructor: (@owner)->
@@ -369,7 +362,9 @@ exports.VarStorage = class VarStorage
     @newKeys = false
   toString: -> "A VarStorage"
   verbose: (args...)-> @owner.verbose args...
-  handle: ([cmd, key, args...], errBlock)-> @handlerFor(key)[cmd] [cmd, key, args...], errBlock
+  handle: (cmd, errBlock, cont)->
+    [name, key, args...] = cmd
+    @handlerFor(key)[name] cmd, errBlock, cont
   handlerFor: (key)->
     k = _.find prefixes(key), (p)=> @handlers[p]
     handler = if k then @handlers[k] else @
@@ -386,10 +381,16 @@ exports.VarStorage = class VarStorage
       @newKeys = false
   setKey: (key, value, info)->
     if typeof value == 'function'
-      obj = @addHandler key, put: (args...)-> value args...
+      obj = @addHandler key, put: ([x, args...], errBlock, cont)->
+        try
+          result = value args...
+        catch err
+          return errBlock error_bad_peer_request, "Error in computed value: #{if err.stack then err.stack.join '\n' else err}"
+        cont result
       obj.set = obj.get = obj.put
     else @values[key] = value
     @addKey key, info || storage_memory
+    value
   removeKey: (key)->
     delete @keyInfo[key]
     delete @varStorage.values[key]
@@ -407,41 +408,59 @@ exports.VarStorage = class VarStorage
     @handlers[path] = obj
     obj
   # handler methods
-  value: (cmd, errBlock)->
+  value: (cmd, errBlock, cont)->
     [x, path, cookie, tree] = cmd
     if tree
-      cont = true
-      blk = (type, msg)->
-        errBlock type, msg
-        cont = false
-      for key in @keysForPrefix path
-        if (v = @handle(['get',key], errBlock))? then cmd.push key, v
-        if !cont then return cmd
-    else if (value = @handle(['get', path], errBlock))? then cmd.push path, value
+      keys = @keysForPrefix path
+      counter = keys.length
+      blk = (args...)->
+        counter = 0
+        errBlock(args...)
+      if counter
+        for key in keys
+          @handle ['get',key], blk, (v)->
+            cmd.push key, v
+            if --counter == 0 then cont cmd
+          if counter < 1 then return
+      else cont cmd
+    else @handle ['get', path], errBlock, (v)->
+      cmd.push path, v
+      cont cmd
     cmd
-  get: ([x, key], errBlock)-> @values[key]
-  set: ([x, key, value, info], errBlock)-> @setKey key, value, info
-  put: ([x, key, value, index], errBlock)->
+  get: ([x, key], errBlock, cont)-> cont @values[key]
+  set: (cmd, errBlock, cont)->
+    [x, key, value, info] = cmd
+    if storageMode and storageModes.indexOf(storageMode) is -1 then errBlock error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
+    else
+      @keyInfo[key] = storageMode = storageMode || @keyInfo[key] || storage_memory
+      cmd[2] = value
+      if storageMode isnt storage_transient
+        if !@keyInfo[key] then @keys.push key
+        cont(@setKey key, value, info)
+  put: ([x, key, value, index], errBlock, cont)->
     if !@values[key] then @values[key] = {}
     if typeof @values[key] != 'object' or @values[key] instanceof Array then errBlock error_variable_not_object "#{key} is not an object"
-    else @values[key][index] = value
-  splice: ([x, key, args...], errBlock)->
+    else cont(@values[key][index] = value)
+  splice: ([x, key, args...], errBlock, cont)->
     if !@values[key] then @values[key] = []
     else if typeof @values[key] != 'object' or !(@values[key] instanceof Array) then errBlock error_variable_not_array, "#{key} is not an array"
     else
       if index < 0 then index = @varStorage.values[key].length + index + 1
       @values[key].splice args...
-  removeFirst: ([x, key, value], errBlock)->
+      cont @values[key]
+  removeFirst: ([x, key, value], errBlock, cont)->
     if typeof @values[key] != 'object' or !(@values[key] instanceof Array) then errBlock error_variable_not_array, "#{key} is not an array"
     else
       val = @values[key]
       idx = val.indexOf value
       if idx > -1 then val.splice idx, 1
-  removeAll: ([x, key, value], errBlock)->
+      cont val
+  removeAll: ([x, key, value], errBlock, cont)->
     if typeof @values[key] != 'object' or !(@values[key] instanceof Array) then errBlock error_variable_not_array, "#{key} is not an array"
     else
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1
+      cont val
 
 exports.renameVars = renameVars = (keys, values, oldName, newName)->
   oldPrefix = "peer/#{oldName}"
@@ -467,7 +486,7 @@ keysForPrefix = (keys, values, prefix)->
     (if values[prefix]? then result.push keys[idx]) while keys[++idx]?.match prefixPattern
   result
 
-caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)->con.listening[p]
+caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)-> con.listening[p]
 
 exports.prefixes = prefixes = (key)->
   result = []

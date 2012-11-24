@@ -23,6 +23,7 @@ module.exports.main = (master)->
           if m = key.match new RegExp 'peer/[^/]+/public/storage/(.*)$'
             console.log "GET #{m[1]}"
           errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
+        set: ([x, key, value], errBlock)->
     peer.listen 'this/public/storage', (key, value)->
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
         when 'retrieve' then retrieveFile peer, value
