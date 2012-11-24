@@ -9,21 +9,57 @@ path = require 'path'
 
 curDir = null
 
-module.exports.main = (master)->
-  console.log "Initializing Leisure Service"
-  fs.realpath process.cwd(), (err, pth)->
-    curDir = path.normalize pth
+module.exports.main = (master, config)->
+  i = 0
+  dir = null
+  while i < config.args.length
+    if config.args[i] == '--dir'
+      dir = config.args[++i]
+    i++
+  if !dir
+    console.log "No directory provided; use --dir directory"
+    process.exit 1
+  fs.realpath dir, (err, pth)->
+    dir = path.normalize pth
     peer = master.newPeer()
     peer.set 'this/public/storage', '', 'peer'
     peer.afterConnect ->
       peer.addHandler 'this/public/storage',
-        get: ([x, key], errBlock)->
-          console.log "SERVICE GET"
-          @verbose "SERVICE GET"
-          if m = key.match new RegExp 'peer/[^/]+/public/storage/(.*)$'
-            console.log "GET #{m[1]}"
-          errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
-        set: ([x, key, value], errBlock)->
+        get: ([x, key], errBlock, cont)->
+          if m = key.match new RegExp 'peer/[^/]+/public/storage(/(.*)|)$'
+            pth = path.normalize "#{dir}/#{m[2] ? ''}"
+            fs.stat pth, (err, stats)->
+              if err then errBlock 'error_bad_peer_request', "No such file or directory: #{pth}"
+              else if stats.isDirectory() then fs.readdir pth, (err, files)->
+                if err then errBlock 'error_bad_peer_request', "Could not read directory: #{pth}"
+                else
+                  i = 0
+                  result = {}
+                  readNext = ->
+                    if i < files.length
+                      child = path.normalize "#{pth}/#{files[i]}"
+                      fs.stat child, (err, stats)->
+                        if err then errBlock 'error_bad_peer_request', "Error statting child #{pth}: #{err}"
+                        else
+                          result[child] =
+                            type: if stats.isDirectory() then 'directory' else 'file'
+                            size: stats.size
+                            atime: stats.atime
+                            mtime: stats.mtime
+                            ctime: stats.ctime
+                          i++
+                          readNext()
+                    else cont result
+                  readNext()
+              else fs.readFile pth, (err, data)->
+                cont data.toString()
+          else errBlock 'error_bad_peer_request', "Bad storage path: #{key}"
+        set: ([x, key, value], errBlock, cont)->
+          console.log "STORING: #{key} <- #{value}"
+          if m = key.match new RegExp 'peer/[^/]+/public/storage/(.+)$'
+            fs.writeFile "#{dir}/#{m[1]}", value, (err)->
+              cont value
+          else errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
     peer.listen 'this/public/storage', (key, value)->
       switch key.replace /^peer\/[^/]*\/public\/storage\/(.*)$/, '$1'
         when 'retrieve' then retrieveFile peer, value

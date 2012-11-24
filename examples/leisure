@@ -68,11 +68,12 @@ start)
                     shift 2
                     ;;
                 *)
+                    extra="$*"
                     break
                     ;;
             esac
         done
-        $XUS start "$name" "$verbose" $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+        $XUS start "$name" "$verbose" $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy' $extra
 ;;
 cat)
         echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u

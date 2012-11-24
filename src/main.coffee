@@ -37,6 +37,7 @@ run = ->
       verbose: ->
       addr: null
       cmd: null
+      args: []
     state = (s && JSON.parse(s)) || {servers: {}}
     i = 2
     args = process.argv
@@ -58,6 +59,9 @@ run = ->
             pattern = new RegExp "^#{args[++i]}/"
             dir = path.resolve args[++i]
             exports.dirMap.push [pattern, new RegExp("^#{dir}/"), "#{dir}/"]
+          else
+            config.args = args[i...]
+            i = args.length
         i++
       [config.host, config.port] = parseAddr config.addr || ':'
       httpServer = startWebSocketServer config, ->
@@ -72,7 +76,7 @@ run = ->
           .then(-> if config.cmd? then require('child_process').spawn('/bin/sh', ['-c', config.cmd], {stdio: ['ignore', 1, 2]}) else 1)
           .end()
       (if config.proxy then startProxy else startXus) config, httpServer, (master)->
-        require(file).main(master) for file in requirements
+        require(file).main(master, config) for file in requirements
 
 startXus = (config, httpServer, thenBlock)->
   exports.xusServer = xusServer = new Server()
