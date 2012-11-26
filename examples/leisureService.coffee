@@ -7,8 +7,6 @@ xus = require './peer'
 fs = require 'fs'
 path = require 'path'
 
-curDir = null
-
 module.exports.main = (master, config)->
   i = 0
   dir = null
