@@ -5,8 +5,12 @@
 # License: ZLIB license
 ####
 
-OPEN=${OPEN:-/etc/alternatives/gnome-www-browser}
-XUS="$XUS_DIR/bin/xus"
+###
+### You need to define these environment variables:
+###   XUS_DIR -- the directory containing the Xus distro (parent of examples)
+###   LEISURE_DIR -- the directory containing the Leisure distro
+###   OPEN -- the path to chrome (defaults to /etc/alternatives/gnome-www-browser)
+###
 
 usage() {
     cat <<EOF
@@ -22,8 +26,18 @@ functions <name>          writes functions in current document
 eval <name> <code>        evaluate code and return the result
 repl <name> [-m]          read-eval-print-loop, -m makes the repl the master
 files <name>              create file service and conneci to Leisure
+
+Make sure you have defined the XUS_DIR and LEISURE_DIR (and maybe OPEN) environment variables.  See this script for details.
 EOF
+    exit 1
 }
+
+if [ -z "$XUS_DIR" -o -z "$LEISURE_DIR" ]; then
+    usage
+fi
+
+OPEN=${OPEN:-/etc/alternatives/gnome-www-browser}
+XUS="$XUS_DIR/bin/xus"
 
 evalResult() {
     expr="$1"
@@ -73,7 +87,7 @@ start)
                     ;;
             esac
         done
-        $XUS start "$name" "$verbose" $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy' $extra
+        $XUS start "$name" $verbose $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy' $extra
 ;;
 cat)
         echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u

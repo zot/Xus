@@ -20,6 +20,7 @@ module.exports.main = (master, config)->
   fs.realpath dir, (err, pth)->
     dir = path.normalize pth
     peer = master.newPeer()
+    peer.set 'this/name', 'localStorage'
     peer.set 'this/public/storage', '', 'peer'
     peer.afterConnect ->
       peer.addHandler 'this/public/storage',

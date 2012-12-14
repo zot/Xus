@@ -34,6 +34,7 @@ exports.Peer = class Peer
     @inTransaction = false
     @con.send()
   send: (batch)-> @processBatch @con, batch
+  get: (key)-> @varStorage.values[key]
   listen: (args...)->
     # IMPORTANT!
     # This is the initial @listen -- after connect, switches to connectedPeerMethods.listen
