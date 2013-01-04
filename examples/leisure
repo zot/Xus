@@ -70,7 +70,11 @@ start)
                     shift 2
                     ;;
                 -u)
-                    url="$2"
+                    if expr "$2" : ".*:.*"; then
+                        cmd="$OPEN"'$size --app='$2'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+                    else
+                        cmd="$OPEN"'$size --app=http://localhost:$XUS_PORT/leisure/'$2'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+                    fi
                     shift 2
                     ;;
                 -s)
@@ -87,7 +91,8 @@ start)
                     ;;
             esac
         done
-        $XUS start "$name" $verbose $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$OPEN"'$size'' --app=http://localhost:$XUS_PORT/leisure/'$url'#xusproxy=ws://localhost:$XUS_PORT/proxy' $extra
+        echo URL: $url, extra: $extra
+        $XUS start "$name" $verbose $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$cmd" $extra
 ;;
 cat)
         echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
@@ -138,7 +143,7 @@ repl-cmd)
         while true; do
             read -p "Leisure> " -e input
             echo '[["set", "leisure/evalExpr", ["'"$input"'", "'$result'"]]]' >&4
-            read line <&3
+            read -r line <&3
             evalResult "$line"
         done
 ;;

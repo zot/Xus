@@ -197,7 +197,7 @@ exports.Server = class Server
     con.addCmd ['set', 'this/name', con.name]
     con.send()
   renamePeerKeys: (con, oldName, newName)->
-    [@varStorage.keys] = renameVars @varStorage.keys, @varStorage.values, oldName, newName
+    [@varStorage.keys] = renameVars @varStorage.keys, @varStorage.values, @varStorage.handlers, oldName, newName
     newCL = {}
     newVL = []
     newPrefix = "peer/#{newName}"
@@ -287,7 +287,7 @@ exports.Server = class Server
   delegate: (con, cmd)->
     [x, key] = cmd
     if match = key.match /^peer\/([^/]+)\//
-      console.log "DELEGATING: #{JSON.stringify cmd}"
+      @verbose "DELEGATING: #{JSON.stringify cmd}"
       peer = @peers[match[1]]
       num = @pendingRequestNum++
       peer.requests[num] = true
@@ -368,7 +368,6 @@ exports.VarStorage = class VarStorage
   handlerFor: (key)->
     k = _.find prefixes(key), (p)=> @handlers[p]
     handler = if k then @handlers[k] else @
-    @verbose "STORAGE HANDLER FOR #{key}: #{handler}"
     handler
   addKey: (key, info)->
     if !@keyInfo[key]
@@ -402,10 +401,10 @@ exports.VarStorage = class VarStorage
   contains: (key)-> @values[key]?
   keysForPrefix: (pref)-> keysForPrefix @keys, @values, pref
   addHandler: (path, obj)->
-    @verbose "ADDING HANDLER FOR #{path}"
     obj.__proto__ = @
     obj.toString = -> "A Handler for #{path}"
     @handlers[path] = obj
+    @addKey path, 'handler'
     obj
   # handler methods
   value: (cmd, errBlock, cont)->
@@ -462,7 +461,7 @@ exports.VarStorage = class VarStorage
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       cont val
 
-exports.renameVars = renameVars = (keys, values, oldName, newName)->
+exports.renameVars = renameVars = (keys, values, handlers, oldName, newName)->
   oldPrefix = "peer/#{oldName}"
   newPrefix = "peer/#{newName}"
   oldPrefixPat = new RegExp "^#{oldPrefix}(?=/|$)"
@@ -470,8 +469,10 @@ exports.renameVars = renameVars = (keys, values, oldName, newName)->
   for key in keysForPrefix keys, values, oldPrefix
     newKey = key.replace oldPrefixPat, newPrefix
     values[newKey] = values[key]
+    handlers[newKey] = handlers[key]
     trans[key] = newKey
     delete values[key]
+    delete handlers[key]
   keys = (k for k of values)
   keys.sort()
   [keys, trans]

@@ -29,7 +29,7 @@ $(basename $1) <command> [<options>]
 
 COMMANDS
 list
-start <name> [-s <addr>] [-e <expr>] [-x <cmd>]...  start a xus instance
+start <name> [-w <addr>] [-e <expr>] [-x <cmd>]...  start a xus instance
 stop <name>                                         stop a xus instance
 run <name> <command> [<arg>]...                     run command in context of named xus instance
 clean <name> | -a                                   clear info for one or all xus instances
@@ -210,6 +210,7 @@ start)
         name=$1
         shift
         #node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
+        echo XUS START EXTRA: $@
         node --no-deprecation -e "xus = require('main.js'); xus.run()" $name "$@"
         if [ $? != 2 ]; then
             removeEntry $name

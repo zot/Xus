@@ -20,12 +20,14 @@ module.exports.main = (master, config)->
   fs.realpath dir, (err, pth)->
     dir = path.normalize pth
     peer = master.newPeer()
-    peer.set 'this/name', 'localStorage'
+    peer.set 'this/name', 'local-storage'
     peer.set 'this/public/storage', '', 'peer'
     peer.afterConnect ->
+      console.log "ADDING STORAGE HANDLER"
       peer.addHandler 'this/public/storage',
         get: ([x, key], errBlock, cont)->
           if m = key.match new RegExp 'peer/[^/]+/public/storage(/(.*)|)$'
+            console.log "GET FILE REQUEST: #{m[2]}, DIR: #{dir}"
             #pth = path.normalize "#{dir}/#{m[2] ? ''}"
             pth = path.normalize m[2] ? ''
             checkDangerous (pth), dir, check errBlock, ->
@@ -56,6 +58,7 @@ module.exports.main = (master, config)->
             fs.writeFile "#{dir}/#{m[1]}", value, (err)->
               cont value
           else errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
+        toString: -> "File Handler for #{dir}"
     peer.set 'this/links', ['leisure/storage']
 
 check = (errBlock, block)->(err, args...)->

@@ -1,0 +1,5 @@
+#!/bin/sh
+#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'talk.html?slides=true\&slide=29' -e leisureService -v "$@" --dir /tmp/files
+#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'http://zot.github.com/Leisure/drive.html' -e leisureService -v "$@" --dir /tmp/files
+#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'drive.html' -e leisureService -v "$@" --dir /tmp/files
+make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'file:///home/bill/lc/lambdaCalculus/drive.html' -e leisureService -v "$@" --dir /tmp/files

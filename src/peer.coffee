@@ -20,12 +20,16 @@ exports.Peer = class Peer
     @valueListeners = {}
     @queuedListeners = []
     @name = null # this is set on connect, by the original @processBatch
+    @namePrefixPat = /^$/
     @varStorage = new VarStorage @
+    peer = @
+    defaultHandler = @varStorage.handlerFor
+    @varStorage.handlerFor = (key)-> defaultHandler.call @, key.replace peer.namePrefixPat, 'this/'
     @pendingBlocks = []
   afterConnect: (block)-> if @name then block() else @pendingBlocks.push block
   setConnection: (@con)->
     @verbose = @con?.verbose || (->)
-    console.log "ADDED CONNECTION: #{@con}, verbose: #{(@con?.verbose || (->)).toString()}"
+    @verbose "ADDED CONNECTION: #{@con}, verbose: #{(@con?.verbose || (->)).toString()}"
   #verbose: ->
   # API UTILS
   transaction: (block)->
@@ -64,23 +68,25 @@ exports.Peer = class Peer
       block() for block in @pendingBlocks
   # PRIVATE
   rename: (newName)->
-    newPath = "peer/#{newName}"
-    thisPat = new RegExp "^this(?=/|$)"
-    oldName = @name ? 'this'
-    @name = newName
-    exports.renameVars @varStorage.keys, @varStorage.values, oldName, newName
-    t = {}
-    for k, v of @treeListeners
-      t[k.replace thisPat, newPath] = v
-    @treeListeners = t
-    c = {}
-    for k, v of @changeListeners
-      c[k.replace thisPat, newPath] = v
-    @changeListeners = c
-    listen = "peer/#{newName}/listen"
-    if @varStorage.values[listen]
-      oldPat = new RegExp "^peer/#{oldName}(?=/|$)"
-      @varStorage.values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
+    if @name != newName
+      newPath = "peer/#{newName}"
+      thisPat = new RegExp "^this(?=/|$)"
+      oldName = @name ? 'this'
+      @name = newName
+      @varStorage.sortKeys()
+      exports.renameVars @varStorage.keys, @varStorage.values, @varStorage.handlers, oldName, newName
+      t = {}
+      for k, v of @treeListeners
+        t[k.replace thisPat, newPath] = v
+      @treeListeners = t
+      c = {}
+      for k, v of @changeListeners
+        c[k.replace thisPat, newPath] = v
+      @changeListeners = c
+      listen = "peer/#{newName}/listen"
+      if @varStorage.values[listen]
+        oldPat = new RegExp "^peer/#{oldName}(?=/|$)"
+        @varStorage.values[listen] = (k.replace oldPat, newPath).replace(thisPat, newPath)
   sendTreeSets: (sets, callback)->
     for msg in sets
       [x, k, v] = msg
@@ -99,10 +105,9 @@ exports.Peer = class Peer
       callback null, null, null, msg, [msg]
   setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg[4..] by 2
   grabTree: (key, callback)->
-    if @name then key = @personalize key
+    #if @name then key = @personalize key
     if !@treeListeners[key] then @treeListeners[key] = []
     @treeListeners[key].push callback
-  personalize: (path)-> path.replace new RegExp('^this(?=\/|$)'), "peer/#{@name}"
   addCmd: (cmd)->
     @con.addCmd cmd
     if !@inTransaction then @con.send()
@@ -114,7 +119,9 @@ exports.Peer = class Peer
   sendCmd: (cmd)->
     @con.addCmd cmd
     @con.send()
-  addHandler: (path, obj)-> @varStorage.addHandler @personalize(path), obj
+  #addHandler: (path, obj)-> @varStorage.addHandler @personalize(path), obj
+  addHandler: (path, obj)-> @varStorage.addHandler path, obj
+  personalize: (path)-> path.replace new RegExp('^this(?=\/|$)'), "peer/#{@name}"
 
 connectedPeerMethods =
   processBatch: (con, batch)->
@@ -122,25 +129,30 @@ connectedPeerMethods =
     numKeys = @varStorage.keys.length
     for cmd in batch
       [name, key, value, index] = cmd
+      if key.match @namePrefixPat then key = key.replace @namePrefixPat, 'this/'
       if name in setCmds and !@varStorage.contains key then @varStorage.keys.push key
       # track updates and respond to requests
       switch name
         when 'error' then console.log "ERROR '#{key}': value"
         when 'request'
-          console.log "GOT REQUEST: #{JSON.stringify cmd}, batch: #{JSON.stringify batch}"
+          @verbose "GOT REQUEST: #{JSON.stringify cmd}, batch: #{JSON.stringify batch}"
           [x, name, num, dcmd] = cmd
           @handleDelegation name, num, dcmd
         else @varStorage.handle cmd, ((type, msg)-> console.log "Error, '#{type}': #{msg}"), ->
     if numKeys != @varStorage.keys.length then @varStorage.keys.sort()
     for cmd in batch
       [name, key, value, index] = cmd
+      if key.match @namePrefixPat then key = key.replace @namePrefixPat, 'this/'
+      if name == 'set' && key == 'this/name'
+        @name = value
+        @namePrefixPat = new RegExp "^peer/#{value}/"
       if name in setCmds then block(key, @varStorage.values[key], cmd, batch) for block in @listenersFor key
       else if name == 'value' && @treeListeners[key]
         cb cmd, batch for cb in @treeListeners[key]
         delete @treeListeners[key]
     null
   listen: (key, simulateSetsForTree, noChildren, callback)->
-    key = key.replace /^this\//, "peer/#{@name}/"
+    #key = key.replace /^this\//, "peer/#{@name}/"
     if typeof simulateSetsForTree == 'function'
       noChildren = simulateSetsForTree
       simulateSetsForTree = false
@@ -149,7 +161,7 @@ connectedPeerMethods =
       noChildren = false
     if noChildren then callback = (changedKey, value, oldValue, cmd, batch)->
       if key == changedKey then callback changedKey, value, oldValue, cmd, batch
-    if @name? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@name}"
+    #if @name? then key = key.replace new RegExp("^this(?=/|$)"), "peer/#{@name}"
     if !callback then [simulateSetsForTree, callback] = [null, simulateSetsForTree]
     if !@changeListeners[key]
       @changeListeners[key] = []
