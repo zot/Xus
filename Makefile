@@ -12,9 +12,11 @@ EX_JS=$(EXAMPLES:%=lib/%.js)
 ALL_JS=$(JS) $(CMD_JS) $(EX_JS)
 ALL_SRC=$(SRC:%=src/%.coffee) $(CMD:%=src/%.coffee) $(EXAMPLES:%=examples/%.coffee)
 
-all: $(ALL_JS) browser
+all: browser
 
 browser: xus.js
+
+xus.js: $(ALL_JS)
 
 lint: coffeelint
 

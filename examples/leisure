@@ -71,10 +71,16 @@ start)
                     ;;
                 -u)
                     if expr "$2" : ".*:.*"; then
-                        cmd="$OPEN"'$size --app='$2'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+                        pre="$OPEN"'$size --app='$2
                     else
-                        cmd="$OPEN"'$size --app=http://localhost:$XUS_PORT/leisure/'$2'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+                        pre="$OPEN"'$size --app=http://localhost:$XUS_PORT/leisure/'$2
                     fi
+                    if expr "$pre" : ".*#.*"; then
+                        cmd=${pre}'&xusproxy=ws://localhost:$XUS_PORT/proxy'
+                    else
+                        cmd=${pre}'#xusproxy=ws://localhost:$XUS_PORT/proxy'
+                    fi
+                    echo COMMAND: $cmd
                     shift 2
                     ;;
                 -s)

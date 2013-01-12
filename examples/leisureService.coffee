@@ -7,6 +7,8 @@ xus = require './peer'
 fs = require 'fs'
 path = require 'path'
 
+console.log "leisure service"
+
 module.exports.main = (master, config)->
   i = 0
   dir = null
@@ -56,8 +58,9 @@ module.exports.main = (master, config)->
           console.log "STORING: #{key} <- #{value}"
           if m = key.match new RegExp 'peer/[^/]+/public/storage/(.+)$'
             fs.writeFile "#{dir}/#{m[1]}", value, (err)->
-              cont value
-          else errBlock 'error_bad_peer_request', "File retrieval not supported, yet: #{m[1]}"
+              if err then errBlock 'error_bad_peer_request', "Couldn't store file #{key}: #{err}"
+              else cont value
+          else errBlock 'error_bad_peer_request', "Bad storage path: #{key}"
         toString: -> "File Handler for #{dir}"
     peer.set 'this/links', ['leisure/storage']
 

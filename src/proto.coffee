@@ -294,6 +294,7 @@ exports.Server = class Server
       @pendingRequests[num] = [peer, con]
       peer.addCmd ['request', con.name, num, cmd]
     else @error con, error_bad_peer_request, "Bad request: #{cmd}"
+  get: (key)-> @varStorage.values[key]
   name: (con, name)->
     if !name? then @disconnect con, error_bad_message, "No name given in name message"
     else if @peers[name] then @disconnect con, error_duplicate_peer_name, "Duplicate peer name: #{name}"

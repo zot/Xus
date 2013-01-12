@@ -1,5 +1,15 @@
 #!/bin/sh
+if [ -z "$XUS_DIR" -o -z "$LEISURE_DIR" ]; then
+    echo XUS_DIR and LEISURE_DIR must both be set
+    exit 1
+fi
+
 #make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'talk.html?slides=true\&slide=29' -e leisureService -v "$@" --dir /tmp/files
 #make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'http://zot.github.com/Leisure/drive.html' -e leisureService -v "$@" --dir /tmp/files
 #make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'drive.html' -e leisureService -v "$@" --dir /tmp/files
-make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'file:///home/bill/lc/lambdaCalculus/drive.html' -e leisureService -v "$@" --dir /tmp/files
+if [ -n "$1" ]; then
+    load="#load=$1"
+else
+    load=""
+fi
+(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $HOME/lc/storage/files
