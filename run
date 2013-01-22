@@ -10,6 +10,12 @@ fi
 if [ -n "$1" ]; then
     load="#load=$1"
 else
-    load=""
+    #load='#load=googledrive://id:0B32MRkbkRMqbRUFlRWF5VjBTNDg'
+    load='#load=local:///intro.lmd'
 fi
-(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $HOME/lc/storage/files
+#(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $HOME/lc/storage/files
+
+#dir=/home/bill/Insync/bill.burdick@gmail.com/LeisureStorage
+dir=/home/bill/lc/lambdaCalculus/
+
+(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $dir -p

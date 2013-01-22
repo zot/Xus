@@ -12,19 +12,19 @@ ex.flock = (fd, flags)->
   if typeof fd is 'number' then basicFlock(fd, flags)
   else fd.then (realFd)-> basicFlock(realFd, flags)
 
-ex.open = (path, flags, mode)-> q.ncall(fs.open, fs, path, flags, mode)
+ex.open = (path, flags, mode)-> q.ninvoke(fs, 'open', path, flags, mode)
 
-ex.close = (fd)-> q.ncall(fs.close, fs, fd)
+ex.close = (fd)-> q.ninvoke(fs, 'close', fd)
 
-ex.truncate = (fd, len)-> q.ncall(fs.truncate, fs, fd, len)
+ex.truncate = (fd, len)-> q.ninvoke(fs, 'truncate', fd, len)
 
-ex.mkdir = (path, mode)-> q.ncall(fs.mkdir, fs, path, mode)
+ex.mkdir = (path, mode)-> q.ninvoke(fs, 'mkdir', path, mode)
 
-ex.stat = (path)-> q.ncall(fs.stat, fs, path)
+ex.stat = (path)-> q.ninvoke(fs, 'stat', path)
 
-ex.fstat = (fd)-> q.ncall(fs.stat, fs, fd)
+ex.fstat = (fd)-> q.ninvoke(fs, 'stat', fd)
 
-ex.createReadStream = (path, options)-> q.ncall(fs.createReadStream, fs, path, options)
+ex.createReadStream = (path, options)-> q.ninvoke(fs, 'createReadStream', path, options)
 
 ex.readFile = (fd)->
   done = q.defer()
@@ -50,7 +50,7 @@ ex.pipe = (stream1, stream2)->
   stream1.pipe stream2
   done.promise
 
-basicFlock = (fd, flags)-> q.ncall(fs.flock, fs, fd, flags)
+basicFlock = (fd, flags)-> q.ninvoke(fs, 'flock', fd, flags)
 
 readSome = (d, fd, buf, str)->
   try

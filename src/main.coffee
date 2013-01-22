@@ -26,7 +26,7 @@ setup = (cont)->
       .then((fd)-> pfs.flock (stateFd = fd), 'ex')
       .then(-> pfs.readFile stateFd)
       .then((s)-> (cont || ->)(s))
-      .end()
+      .done()
   catch err
     console.log "Error: #{err.stack}"
 
@@ -58,7 +58,8 @@ run = ->
           when '-u'
             pattern = new RegExp "^#{args[++i]}/"
             dir = path.resolve args[++i]
-            exports.dirMap.push [pattern, new RegExp("^#{dir}/"), "#{dir}/"]
+            #exports.dirMap.push [pattern, new RegExp("^#{dir}/"), "#{dir}/"]
+            exports.addDirHandler pattern, dir
           else
             config.args = args[i...]
             i = args.length
@@ -74,7 +75,7 @@ run = ->
           .then(-> pfs.writeFile(stateFd, JSON.stringify state))
           .then(-> pfs.close(stateFd))
           .then(-> if config.cmd? then require('child_process').spawn('/bin/sh', ['-c', config.cmd], {stdio: ['ignore', 1, 2]}) else 1)
-          .end()
+          .done()
       (if config.proxy then startProxy else startXus) config, httpServer, (master)->
         require(file).main(master, config) for file in requirements
 
@@ -84,9 +85,11 @@ startXus = (config, httpServer, thenBlock)->
   xusServer.verbose = config.verbose
   xusServer.verbose "Starting Xus"
   exports.connectXus xusServer, httpServer
+  exports.addXusCometHandler xusServer, new RegExp "^/peer"
   thenBlock xusServer
 
 startProxy = (config, httpServer, thenBlock)->
+  if config.verbose then console.log "Starting proxy"
   exports.connectProxy config, httpServer, thenBlock
 
 parseAddr = (addr)->

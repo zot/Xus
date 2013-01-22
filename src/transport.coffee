@@ -161,6 +161,20 @@ exports.WebSocketConnection = class WebSocketConnection extends Connection
     catch err
       console.log "Error closing connection: #{err.stack}"
 
+deadComets = {}
+
+exports.CometConnection = class CometConnection extends Connection
+  constructor: (@master, @socket)->
+    super @master
+    @socket.on 'disconnect', -> @master.disconnect @
+    @socket.on 'xus.command', (data)-> @newData data
+    @master.addConnection @
+  connected: true
+  write: (str)-> @socket.emit 'xusCmd', JSON.parse str
+  basicClose: ->
+    if !@socket._zombi then @socket.emit 'xus.terminate', ''
+    deadComets[@socket._uuid] = true
+
 #####
 # Master for the muxed connection
 #

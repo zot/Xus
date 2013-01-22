@@ -9,13 +9,18 @@
 
 # this uses socat and jshon
 
-BASE_DIR=$(dirname $(dirname $(realpath $0)))
+NODE=${NODE:-node}
+
+#BASE_DIR=$(dirname $(dirname $(realpath $0)))
+BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 
 if [ -z "$NODE_PATH" ]; then
-    NODE_PATH="$NODE_PATH:$BASE_DIR/lib:$BASE_DIR/examples"
+    export NODE_PATH="$NODE_PATH:$BASE_DIR/lib:$BASE_DIR/examples"
 else
     export NODE_PATH="$BASE_DIR/lib:$BASE_DIR/examples"
 fi
+
+echo NODE_PATH: $NODE_PATH
 
 XUS_SAVED_PATH="${XUS_SAVED_PATH:-$PATH}"
 
@@ -211,7 +216,8 @@ start)
         shift
         #node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
         echo XUS START EXTRA: $@
-        node --no-deprecation -e "xus = require('main.js'); xus.run()" $name "$@"
+        #$NODE --no-deprecation -e "xus = require('main.js'); xus.run()" $name "$@"
+        $NODE -e "xus = require('main.js'); xus.run()" $name "$@"
         if [ $? != 2 ]; then
             removeEntry $name
         fi
@@ -223,16 +229,21 @@ stop)
 clean)
         if [ -z "$1" ]; then
             usage
-        elif [ ! -e $STATE ]; then
+        elif [ ! -e "$STATE" ]; then
+            echo no state file
             exit
         fi
-        state="$(<$STATE)"
+        state="$(cat $STATE)"
         if [ -n "$state" ]; then
             if [ "$1" = -a ]; then
+                echo Cleaning all servers
                 echo "$state" | jshon -d servers -n object -i servers > $STATE
             else
+                echo Cleaning server $1
                 echo "$state" | jshon -e servers -d "$1" -p > $STATE
             fi
+        else
+            echo State file empty
         fi
 ;;
 run)

@@ -11,6 +11,7 @@ path = require 'path'
 fs = require 'fs'
 send = require 'send'
 url = require 'url'
+comet = require 'comet.io'
 
 exports.startWebSocketServer = (config, ready)->
   app = require('http').createServer createHandler(config)
@@ -18,7 +19,16 @@ exports.startWebSocketServer = (config, ready)->
   else app.listen ready
   app
 
+exports.addXusCometHandler = addXusCometHandler = (xusServer, pattern)->
+  cometServer = comet.createServer()
+  handler = (pathname, req, res, next)->
+    cometServer.serve req, res
+  handler.urlPat = pattern
+  urlHandlers.splice 0, 0, handler
+  cometServer.on 'connection', (socket)-> new CometConnection xusServer, socket
+
 exports.dirMap = dirMap = []
+urlHandlers = []
 extensions =
   js: 'application/javascript'
   html: 'text/html'
@@ -26,16 +36,34 @@ extensions =
   css: 'text/css'
   png: 'image/png'
 
-createHandler = (config)-> (req, res)->
-  pathname = url.parse(req.url).pathname
-  for [urlPattern, dirPattern, dir] in dirMap
-    file = path.resolve pathname.replace(urlPattern, dir)
-    if file.match(dirPattern) # make sure there's no funny business :)
-      send(req, pathname.replace(urlPattern, "/"))
+exports.addDirHandler = addDirHandler = (urlPat, dir)->
+  if dir[dir.length - 1] != '/' then dir = "#{dir}/"
+  dirPattern = new RegExp "^#{dir}"
+  handler = (pathname, req, res, next)->
+    file = path.resolve pathname.replace(urlPat, dir)
+    if "#{file}/" == dir
+      file = "#{file}/index.html"
+      pathname = "#{pathname}/index.html"
+    if file.match dirPattern
+      send(req, pathname.replace urlPat, "/")
       .root(dir)
-      .pipe(res);
-      return
-  badPage req, res
+      .pipe(res)
+    else
+      next()
+  handler.urlPat = urlPat
+  urlHandlers.push handler
+
+createHandler = (config)-> (req, res)->
+  req.on 'end', ->
+    nextHandler 0, url.parse(req.url).pathname, req, res
+
+nextHandler = (index, pathname, req, res)->
+  handler = urlHandlers[index]
+  if !handler
+    badPage req, res
+  else if handler and pathname.match handler.urlPat
+    handler pathname, req, res, -> nextHandler index + 1, pathname, req, res
+  else nextHandler index + 1, pathname, req, res
 
 contentType = (file)-> extensions[file.replace /^.*\.([^.]*)$/, '$1'] ? 'text/plain'
 
