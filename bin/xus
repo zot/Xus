@@ -56,6 +56,14 @@ checkState() {
     fi
 }
 
+escape() {
+  if (echo $1 | jshon || jshon -n "$1")> /dev/null 2>&1; then
+      echo $1
+  else
+      echo "\"$1\""
+  fi
+}
+
 listServer() {
     echo $1 $(echo "$2" | jshon -e address -u) $(echo "$2" | jshon -e port -u)
 }
@@ -107,10 +115,14 @@ showBatch() {
                 return
             fi
         done
-    elif [ "$(echo "$1" | jshon -e 0 -u)" = splice ]; then
-        key=$(echo "$1" | jshon -e 1 -u)
-        value="$(echo $1 | jshon -d 0 -d 0)"
-        echo "$key splice $(echo $value)"
+    else
+        cmd="$(echo "$1" | jshon -e 0 -u)"
+        echo "CMD: $cmd"
+        if expr "$cmd" : "splice\|removeAll\|removeFirst" > /dev/null 2>&1; then
+            key=$(echo "$1" | jshon -e 1 -u)
+            value="$(echo $1 | jshon -d 0 -d 0)"
+            echo "$key $cmd $(echo $value)"
+        fi
     fi
 }
 
@@ -267,11 +279,7 @@ splice)
             shift
             shift
             while [ "$#" != 0 ]; do
-                if (echo $1 | jshon || jshon -n "$1")> /dev/null 2>&1; then
-                    cmd=$cmd",$1"
-                else
-                    cmd=$cmd',"'$1'"'
-                fi
+                cmd=$cmd",$(escape $1)"
                 shift
             done
             echo "$cmd]]"
@@ -282,9 +290,9 @@ get) [ -n "$2" ] && subCmd get-cmd "$@" || usage
 ;;
 listen) [ -n "$2" ] && subCmd listen-cmd "$@" || usage
 ;;
-removeFirst) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeFirst", "'$2'", '$3']]' || usage
+removeFirst) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeFirst", "'$2'", '$(escape $3)']]' || usage
 ;;
-removeAll) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeAll", "'$2'", '$3']]' || usage
+removeAll) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeAll", "'$2'", '$(escape $3)']]' || usage
 ;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
