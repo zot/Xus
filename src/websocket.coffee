@@ -4,7 +4,7 @@
 ####
 
 exports = module.exports = require './base'
-{ProxyMux, SocketConnection, WebSocketConnection, Connection} = require './transport'
+{ProxyMux, SocketConnection, WebSocketConnection, Connection, CometConnection} = require './transport'
 ws = require 'ws'
 _ = require './lodash.min'
 path = require 'path'
@@ -76,7 +76,9 @@ exports.connectXus = (xusServer, httpServer)->
   wServer = new ws.Server noServer: true
   httpServer.on 'upgrade', (req, socket, head)->
     if req.url == '/cmd' then new SocketConnection xusServer, socket, head
-    else if req.url == '/peer' then wServer.handleUpgrade req, socket, head, (con)-> new WebSocketConnection xusServer, con
+    else if req.url == '/peer' then wServer.handleUpgrade req, socket, head, (con)->
+      wsCon = new WebSocketConnection xusServer, con
+      wsCon.sendPending()
     else con.destroy()
 
 exports.connectProxy = (config, httpServer, connectBlock)->
@@ -90,7 +92,8 @@ exports.connectProxy = (config, httpServer, connectBlock)->
       proxy.newConnectionEndpoint (proxyCon)-> new SocketConnection proxyCon, socket, head
     else if req.url == '/proxy' # main connection from a Xus server
       wServer.handleUpgrade req, socket, head, (con)->
-        new WebSocketConnection proxy, con
+        wsCon = new WebSocketConnection proxy, con
+        wsCon.sendPending()
         connectBlock proxy
     else con.destroy()
   proxy

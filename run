@@ -4,20 +4,25 @@ if [ -z "$XUS_DIR" -o -z "$LEISURE_DIR" ]; then
     exit 1
 fi
 
-#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'talk.html?slides=true\&slide=29' -e leisureService -v "$@" --dir /tmp/files
-#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'http://zot.github.com/Leisure/drive.html' -e leisureService -v "$@" --dir /tmp/files
-#make && cp xus.js ~/lc/lambdaCalculus && examples/leisure start bubba -u 'drive.html' -e leisureService -v "$@" --dir /tmp/files
 if [ -n "$1" ]; then
     load="#load=$1"
 else
-    #load='#load=googledrive://id:0B32MRkbkRMqbRUFlRWF5VjBTNDg'
     load='#load=local:///intro.lmd'
-    #load='#load=local:///notes.lmd'
 fi
-#(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $HOME/lc/storage/files
 
 dir=/home/bill/Insync/bill.burdick@gmail.com/LeisureStorage
-#dir=/home/bill/lc/lambdaCalculus/
-#dir=$HOME/lc/storage/files
 
-(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba -u "file:///home/bill/lc/lambdaCalculus/drive.html${load}" -e leisureService -v "$@" --dir $dir -p
+page=local
+#page=none
+#page=deployed
+
+case $page in
+    local) url="-u http://localhost:\$XUS_PORT/leisure/drive.html${load}"
+        ;;
+    none) url="-w 9090"
+        ;;
+    deployed) url="-u http://zot.github.com/Leisure/drive.html${load}"
+        ;;
+esac
+
+(cd "$XUS_DIR"; make && cp xus.js ~/lc/lambdaCalculus) && "$XUS_DIR/examples/leisure" start bubba $url -e leisureService -v "$@" --dir $dir -p

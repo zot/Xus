@@ -36,7 +36,8 @@ if [ -z "$XUS_DIR" -o -z "$LEISURE_DIR" ]; then
     usage
 fi
 
-OPEN=${OPEN:-/etc/alternatives/gnome-www-browser}
+OPEN="${OPEN:-/etc/alternatives/gnome-www-browser}"
+#OPEN="${OPEN:-/etc/alternatives/gnome-www-browser} --always-enable-dev-tools"
 XUS="$XUS_DIR/bin/xus"
 
 evalResult() {

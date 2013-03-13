@@ -118,6 +118,7 @@ exports.Server = class Server
   newKeys: false
   anonymousPeerCount: 0
   constructor: ->
+    console.log "NEW XUS SERVER"
     @connections = []
     @peers = {}
     @varStorage = new VarStorage @
@@ -146,8 +147,11 @@ exports.Server = class Server
         @processLinks con, @changedLinks
         @changedLinks = null
       batch = @nextBatch
-    c.send() for c in @connections
+    for c in @connections
+      c?.send()
   processMsg: (con, [name], msg, noLinks)->
+    console.log "@@@@@"
+    console.log "*** processMsg: #{msg}"
     if con.isConnected()
       if name in cmds
         if name is 'response' then [x1, x2, tmpMsg] = msg else tmpMsg = msg
@@ -156,9 +160,7 @@ exports.Server = class Server
           key = tmpMsg[1] = key.replace new RegExp('^this/'), "#{con.peerPath}/"
         isMyPeerKey = key.match("^#{con.peerPath}/")
         if !isMyPeerKey && !noLinks && key.match("^peer/") && !key.match("^.*/public(/|$)")
-          @primDisconnect con, error_private_variable, """
-          Error, #{con.name} (key = #{key}, peerPath = #{con.peerPath}, match = #{key.match("^#{con.peerPath}")}) attempted to change another peer's private variable: '#{key}' in message: #{JSON.stringify msg}
-          """
+          @primDisconnect con, error_private_variable, "Error, #{con.name} (key = #{key}, peerPath = #{con.peerPath}, match = #{key.match("^#{con.peerPath}")}) attempted to change another peer's private variable: '#{key}' in message: #{JSON.stringify msg}"
         else
           if isMyPeerKey
             switch key
@@ -171,9 +173,9 @@ exports.Server = class Server
             @changedLinks[key] = true
           if name != 'response' and @shouldDelegate con, key then @delegate con, msg
           else
-            @verbose "EXECUTING: #{msg}"
+            @verbose "EXECUTING: #{JSON.stringify msg}"
             @[name] con, msg, =>
-              @verbose "EXECUTED: #{msg}"
+              #@verbose "EXECUTED: #{JSON.stringify msg}"
               if name in setCmds
                 @verbose "CMD: #{JSON.stringify msg}, VALUE: #{JSON.stringify @varStorage.values[key]}"
                 if key == con.namePath then @name con, msg[2]
@@ -213,7 +215,8 @@ exports.Server = class Server
     con.links = {}
     @connections.push con
     @varStorage.setKey con.listenPath, []
-    con.addCmd ['set', 'this/name', con.name]
+    con.date = new Date().getTime()
+    con.addCmd ['set', 'this/name', con.name, con.date]
     con.send()
   renamePeerKeys: (con, oldName, newName)->
     [@varStorage.keys] = renameVars @varStorage.keys, @varStorage.values, @varStorage.handlers, oldName, newName
@@ -432,7 +435,8 @@ exports.VarStorage = class VarStorage
   value: (cmd, errBlock, cont)->
     [x, path, cookie, tree] = cmd
     if tree
-      keys = @keysForPrefix path
+      keys = [path, @keysForPrefix(path)...]
+      console.log "GETTING VALUES FOR PATH: #{path} KEYS: #{JSON.stringify keys}"
       counter = keys.length
       blk = (args...)->
         counter = 0
@@ -440,12 +444,13 @@ exports.VarStorage = class VarStorage
       if counter
         for key in keys
           @handle ['get',key], blk, (v)->
-            cmd.push key, v
+            console.log "VALUE FOR #{key} IS #{v}"
+            if v then cmd.push key, v
             if --counter == 0 then cont cmd
           if counter < 1 then return
       else cont cmd
     else @handle ['get', path], errBlock, (v)->
-      cmd.push path, v
+      if v then cmd.push path, v
       cont cmd
     cmd
   get: ([x, key], errBlock, cont)-> cont @values[key]
@@ -470,7 +475,7 @@ exports.VarStorage = class VarStorage
     if typeof @values[key] != 'object' or !(@values[key] instanceof Array)
       errBlock error_variable_not_array, "#{key} is not an array"
     else
-      if index < 0 then index = @varStorage.values[key].length + index + 1
+      if args[0] < 0 then args[0] = @values[key].length + args[0] + 1
       @values[key].splice args...
       cont @values[key]
   removeFirst: ([x, key, value], errBlock, cont)->

@@ -35,6 +35,7 @@ exports.JSONCodec = JSONCodec =
     con.saved = if data[data.length - 1] is '\n' then '' else msgs.pop()
     con.processBatch batch for batch in _.map msgs, (m)->
       try
+        con.verbose "PROCESSING BATCH: #{m}"
         JSON.parse(m)
       catch err
         con.addCmd ['error', "Could not parse message: #{m}"]
@@ -68,7 +69,7 @@ exports.JSONCodec = JSONCodec =
 exports.Connection = class Connection
   write: (str)-> @master.disconnect this, error_bad_connection, "Connection has no 'write' method"
   basicClose: -> @master.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
-  constructor: (@master, @codec, @saved = '')->
+  constructor: (master, @codec, @saved = '')->
     @codec = @codec ? JSONCodec
     try
       @codec.prepare @
@@ -76,6 +77,8 @@ exports.Connection = class Connection
       console.log err.stack
     @q = []
     @connected = true
+    @setMaster master
+  setMaster: (@master)->
   verbose: (str)-> @master.verbose str
   isConnected: -> @connected
   close: ->
@@ -97,8 +100,9 @@ exports.FdConnection = class FdConnection extends Connection
     @q = []
     @writing = false
   setMaster: (@master)->
-    @master.addConnection @
-    @read new Buffer 65536
+    if @master
+      @master.addConnection @
+      @read new Buffer 65536
   basicClose: ->
     fs.close @input, (err)-> console.log "Error closing connection: #{err.stack}"
     fs.close @output, (err)-> console.log "Error closing connection: #{err.stack}"
@@ -145,16 +149,28 @@ exports.SocketConnection = class SocketConnection extends Connection
 
 exports.WebSocketConnection = class WebSocketConnection extends Connection
   constructor: (@master, @con)->
+    @pending = []
     super @master
-    @con.onmessage = (evt) => @newData evt.data
-    @con.onend = (hadError)=> @master.disconnect @
-    @con.onclose = (hadError)=> @master.disconnect @
-    @con.onerror = (hadError)=> @master.disconnect @
-    @master.addConnection @
+  setMaster: (@master)->
+    if @master
+      if @con.readyState == 1 then @sendPending()
+      else @con.onopen = (evt)=> @sendPending()
+      @con.onmessage = (evt) => console.log "MESSAGE: #{JSON.stringify evt.data}"; @newData evt.data
+      @con.onend = (hadError)=> @master.disconnect @
+      @con.onclose = (hadError)=> @master.disconnect @
+      @con.onerror = (hadError)=> @master.disconnect @
+      @master.addConnection @
   connected: true
-  write: (str)->
-    @verbose "#{d @} writing: #{str}";
-    @con.send str
+  write: (str)-> @pending.push str
+  sendPending: ->
+    console.log "CHANGING WRITE METHOD"
+    @write = (str)->
+      @verbose "#{d @} writing: #{str}";
+      @con.send str
+    for msg in @pending
+      @write msg
+    @pending = null
+    @sendPending = ->
   basicClose: ->
     try
       @con.terminate()
@@ -166,11 +182,38 @@ deadComets = {}
 exports.CometConnection = class CometConnection extends Connection
   constructor: (@master, @socket)->
     super @master
-    @socket.on 'disconnect', -> @master.disconnect @
-    @socket.on 'xus.command', (data)-> @newData data
+  setMaster: (@master)->
+    console.log "MASTER: #{@master}"
     @master.addConnection @
+    @socket.on 'disconnect', => @master.disconnect @
+    @socket.on 'xusCmd', (data)=> @verbose "MESSAGE: #{data.str}"; @newData data.str
   connected: true
-  write: (str)-> @socket.emit 'xusCmd', JSON.parse str
+  write: (str)->
+    @verbose "#{d @} writing: #{str}"
+    @socket.emit 'xusCmd', {str: str}
+  basicClose: ->
+    if !@socket._zombi then @socket.emit 'xusTerminate', ''
+    deadComets[@socket._uuid] = true
+
+exports.CometClientConnection = class CometClientConnection extends Connection
+  constructor: (@master, url)->
+    super @master
+    @pending = []
+    @socket = comet.connect(url
+    ).on('connect', => @sendPending()
+    ).on('xusCmd', (data)=> @verbose "MESSAGE: #{data.str}"; @newData data.str
+    ).on('xusTerminate', => @master.disconnect @
+    )
+  connected: true
+  write: (str)-> @pending.push str
+  sendPending: ->
+    console.log "CHANGING WRITE METHOD"
+    @write = (str)->
+      @verbose "#{d @} writing: #{str}"
+      @socket.emit 'xusCmd', {str: str}
+    for msg in @pending
+      @write msg
+    @pending = null
   basicClose: ->
     if !@socket._zombi then @socket.emit 'xus.terminate', ''
     deadComets[@socket._uuid] = true

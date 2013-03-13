@@ -26,11 +26,13 @@ exports.Peer = class Peer
     defaultHandler = @varStorage.handlerFor
     @varStorage.handlerFor = (key)-> defaultHandler.call @, key.replace peer.namePrefixPat, 'this/'
     @pendingBlocks = []
+  addConnection: (con)->
   afterConnect: (block)-> if @name then block() else @pendingBlocks.push block
   setConnection: (@con)->
+    @con?.setMaster @
     @verbose = @con?.verbose || (->)
-    @verbose "ADDED CONNECTION: #{@con}, verbose: #{(@con?.verbose || (->)).toString()}"
-  #verbose: ->
+    @verbose "ADDED CONNECTION: #{@con}, verbose: #{@verbose.toString()}"
+  verbose: ->
   # API UTILS
   transaction: (block)->
     @inTransaction = true
@@ -59,6 +61,7 @@ exports.Peer = class Peer
     # This is the initial @processBatch -- after connect, switches to connectedPeerMethods.processBatch
     if batch[0][0] == 'set' and batch[0][1] == 'this/name'
       @name = batch[0][2]
+      @date = batch[0][3]
       @[k] = v for k,v of connectedPeerMethods
       for cmd in @queuedListeners
         @listen cmd...
@@ -96,7 +99,7 @@ exports.Peer = class Peer
     idx = _.sortedIndex @varStorage.keys, key
     if simulate
       msgs = []
-      msgs.push ['set', @varStorage.keys[idx], @varStorage.values[@varStorage.keys[idx]]] while @varStorage.keys[idx].match prefix
+      msgs.push ['set', @varStorage.keys[idx], @varStorage.values[@varStorage.keys[idx]]] while @varStorage.keys[idx]?.match prefix
       @sendTreeSets msgs, callback
     else
       msg = ['value', key, null, true]
@@ -112,7 +115,8 @@ exports.Peer = class Peer
     @con.addCmd cmd
     if !@inTransaction then @con.send()
   disconnect: -> @con.close()
-  listenersFor: (key)-> _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
+  listenersFor: (key)->
+    _.flatten _.map prefixes(key), (k)=>@changeListeners[k] || []
   handleDelegation: (name, num, cmd)->
     # Override this for your own custom behavior
     @varStorage.handle cmd, ((type, msg)=> @sendCmd ['error', type, msg]), => @sendCmd ['response', num, cmd]
@@ -152,7 +156,7 @@ connectedPeerMethods =
         delete @treeListeners[key]
     null
   listen: (key, simulateSetsForTree, noChildren, callback)->
-    #key = key.replace /^this\//, "peer/#{@name}/"
+    key = key.replace /^this\//, "peer/#{@name}/"
     if typeof simulateSetsForTree == 'function'
       noChildren = simulateSetsForTree
       simulateSetsForTree = false
@@ -204,6 +208,7 @@ class DirectConnection
       @ctx.server.verbose "#{d @} SENDING #{@name}, #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @otherMaster.processBatch @otherConnection, q
+  setMaster: ->
 
 class DelegationHandler
   constructor: (@peer)->

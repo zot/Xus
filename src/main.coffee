@@ -85,7 +85,7 @@ startXus = (config, httpServer, thenBlock)->
   xusServer.verbose = config.verbose
   xusServer.verbose "Starting Xus"
   exports.connectXus xusServer, httpServer
-  exports.addXusCometHandler xusServer, new RegExp "^/peer"
+  exports.addXusCometHandler xusServer, new RegExp "^/_comet.io"
   thenBlock xusServer
 
 startProxy = (config, httpServer, thenBlock)->
