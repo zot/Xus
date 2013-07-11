@@ -33,7 +33,7 @@ _ = require './lodash.min'
 # Response format: ['response', requestId, cmd]
 ####
 
-cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
+cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree']
 
 ####
 # Commands
@@ -59,9 +59,12 @@ cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll']
 # removeAll key value
 #   remove all occurances of value in the key's array
 #
+# removeTree key
+#   removes key and all of its children
+#
 ####
 
-exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll']
+exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree']
 
 ####
 # ERROR TYPES
@@ -151,8 +154,8 @@ exports.Server = class Server
     for c in @connections
       c?.send()
   processMsg: (con, [name], msg, noLinks)->
-    console.log "@@@@@"
-    console.log "*** processMsg: #{msg}"
+    #console.log "@@@@@"
+    #console.log "*** processMsg: #{msg}"
     if con.isConnected()
       if name in cmds
         if name is 'response' then [x1, x2, tmpMsg] = msg else tmpMsg = msg
@@ -353,7 +356,7 @@ exports.Server = class Server
       if storageMode isnt storage_transient
         if !oldInfo
           @varStorage.keys.push key
-          @newKeys = true
+          @varStorage.newKeys = @newKeys = true
         @handleStorageCommand con, cmd, ->
           cmd[2] = value
           cont()
@@ -365,6 +368,7 @@ exports.Server = class Server
     if !@varStorage.canRemove(key) then @primDisconnect con, error_variable_not_array, "Can't insert into #{key} because it does not support splice and indexOf"
     else @handleStorageCommand con, cmd, cont
   removeAll: (con, cmd, cont)-> @handleStorageCommand con, cmd, cont
+  removeTree: (con, cmd, cont)-> @handleStorageCommand con, cmd, cont
   response: (con, rcmd, cont)->
     [x, id, cmd] = rcmd
     [peer, receiver] = @pendingRequests[id]
@@ -397,17 +401,18 @@ exports.VarStorage = class VarStorage
     handler = if k then @handlers[k] else @
     handler
   addKey: (key, info)->
-    console.log "ADD KEY: #{key}"
+    #console.log "ADD KEY: #{key}"
     if !@keyInfo[key]
       @newKeys = true
       @keyInfo[key] = info
       @keys.push key
-    else
-      console.log "KEY #{key} ALREADY PRESENT"
+    #else
+      #console.log "KEY #{key} ALREADY PRESENT"
     info
   sortKeys: ->
     if @newKeys
       @keys.sort()
+      #console.log "SORTED KEYS: #{@keys}"
       @newKeys = false
   setKey: (key, value, info)->
     if typeof value == 'function'
@@ -422,10 +427,14 @@ exports.VarStorage = class VarStorage
     @addKey key, info || storage_memory
     value
   removeKey: (key)->
+    #console.log "REMOVING KEY: #{key}"
     delete @keyInfo[key]
     delete @values[key]
-    idx = _.sortedIndex key, @keys
-    if idx > -1 then @keys.splice idx, 1
+    @sortKeys()
+    idx = _.sortedIndex @keys, key
+    if idx > -1
+      #console.log "REMOVING #{key} (#{@keys[idx]})"
+      @keys.splice idx, 1
   isObject: (key)-> typeof @values[key] == 'object'
   canSplice: (key)-> !@values[key] ||(@values[key].splice? && @values[key].length?)
   canRemove: (key)-> canSplice(key) && @values[key].indexOf?
@@ -442,8 +451,7 @@ exports.VarStorage = class VarStorage
     [x, path, cookie, tree] = cmd
     if tree
       console.log "KEYS: #{@keys}"
-      #keys = [path, @keysForPrefix(path)...]
-      keys = @keysForPrefix(path)
+      keys = @keysForPrefix path
       console.log "GETTING VALUES FOR PATH: #{path} KEYS: #{JSON.stringify keys}, ALL KEYS: #{@keys}"
       counter = keys.length
       blk = (args...)->
@@ -452,7 +460,7 @@ exports.VarStorage = class VarStorage
       if counter
         for key in keys
           @handle ['get',key], blk, (v)->
-            console.log "VALUE FOR #{key} IS #{v}"
+            #console.log "VALUE FOR #{key} IS #{v}"
             if v then cmd.push key, v
             if --counter == 0 then cont cmd
           if counter < 1 then return
@@ -468,18 +476,22 @@ exports.VarStorage = class VarStorage
       errBlock error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
       oldInfo = @keyInfo[key]
-      @keyInfo[key] = storageMode = storageMode || @keyInfo[key] || storage_memory
+      #@keyInfo[key] = storageMode = storageMode || @keyInfo[key] || storage_memory
+      storageMode = storageMode || @keyInfo[key] || storage_memory
       cmd[2] = value
       if storageMode isnt storage_transient
-        if !oldInfo
-          @keys.push key
-          @newKeys = true
+        #if !oldInfo
+        #  @keys.push key
+        #  @newKeys = true
         cont(@setKey key, value, info)
   put: ([x, key, value, index], errBlock, cont)->
     if !@values[key] then @values[key] = {}
     if typeof @values[key] != 'object' or @values[key] instanceof Array
       errBlock error_variable_not_object "#{key} is not an object"
-    else cont(@values[key][index] = value)
+    else
+      if value == null then delete @values[key][index] else @values[key][index] = value
+      if _.isEmpty @values[key] then @removeKey key
+      cont(value)
   splice: ([x, key, args...], errBlock, cont)->
     @verbose "SPLICING: #{JSON.stringify [x, key, args...]}"
     if !@values[key] then @values[key] = []
@@ -504,6 +516,7 @@ exports.VarStorage = class VarStorage
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       cont val
+  removeTree: ([x, key], errBlock, cont)-> @removeKey key for key in @keysForPrefix key
 
 exports.renameVars = renameVars = (keys, values, handlers, oldName, newName)->
   oldPrefix = "peer/#{oldName}"
@@ -526,11 +539,14 @@ keysForPrefix = (keys, values, prefix)->
   result = []
   idx = _.find [0...keys.length], (i)-> keys[i].match initialPattern
   if idx > -1
-    #console.log "FOUND: #{keys[idx]}"
-    prefixPattern = "^#{prefix}/"
+    console.log "FOUND KEY: #{keys[idx]} AT INDEX: #{idx}"
+    #prefixPattern = "^#{prefix}/"
+    prefixPattern = initialPattern
     #if values[prefix]? then result.push prefix
     idx--
     (if values[keys[idx]]? then result.push keys[idx]) while keys[++idx]?.match prefixPattern
+  else
+    console.log "NO KEYS FOR PREFIX: #{prefix}, KEYS: #{keys}"
   result
 
 caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)-> con.listening[p]

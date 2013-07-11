@@ -13,6 +13,7 @@ NODE=${NODE:-node}
 
 #BASE_DIR=$(dirname $(dirname $(realpath $0)))
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
+SCRIPT=$(basename $(readlink -f $0))
 
 if [ -z "$NODE_PATH" ]; then
     export NODE_PATH="$NODE_PATH:$BASE_DIR/lib:$BASE_DIR/examples"
@@ -27,8 +28,12 @@ PATH="$XUS_SAVED_PATH:$BASE_DIR/bin:$BASE_DIR/examples"
 STATE="$HOME/.xus/state"
 
 usage() {
+    EXIT=$?
+    if [ "$EXIT" = 0 ]; then
+        EXIT=1
+    fi
     cat <<EOF
-$(basename $1) COMMAND [OPTIONS]
+$SCRIPT COMMAND [OPTIONS]
 
 COMMANDS
 list
@@ -36,15 +41,16 @@ start NAME [-w ADDR] [-e EXPR] [-x CMD]...  start a xus instance
 stop NAME                                   stop a xus instance
 run NAME COMMAND [ARG]...                   run command in context of named xus instance
 clean NAME | -a                             clear info for one or all xus instances
-get NAME [-a] [-v] KEY...                   get a value, -a: include children, -v: value only
+get NAME [-a] [-v] KEY...                   get a value, -a: with all descendents, -v: value only
 set NAME KEY VALUE                          set a value
 listen NAME [-m] KEY...                     listen for keys, -m sets this peer as the master
 put NAME KEY INDEX VALUE                    set the value of a key in a variable
-splice NAME KEY INDEX COUNT ...             insert a value into an array
+splice NAME KEY INDEX COUNT ...             insert a value into an array (negatives count from end)
 removeFirst NAME KEY VALUE                  remove first occurrence of value from array
 removeAll NAME KEY VALUE                    remove all occurrences of value from array
+removeTree NAME KEY                         remove a key ane all of its children
 EOF
-    exit 1
+    exit $EXIT
 }
 
 checkState() {
@@ -128,7 +134,7 @@ showBatch() {
     else
         cmd="$(echo "$1" | jshon -e 0 -u)"
         echo "CMD: $cmd"
-        if expr "$cmd" : "splice\|removeAll\|removeFirst" > /dev/null 2>&1; then
+        if expr "$cmd" : "splice\|removeAll\|removeFirst\|removeTree" > /dev/null 2>&1; then
             key=$(echo "$1" | jshon -e 1 -u)
             value="$(echo $1 | jshon -d 0 -d 0)"
             echo "$key $cmd $(echo $value)"
@@ -221,6 +227,11 @@ cmd="$1"
 if [ $# != 0 ]; then
     shift
 fi
+if [ "$cmd" = -v ]; then
+    cmd="$1"
+    shift
+    echo "XUS COMMAND: [$SCRIPT $1] $*"
+fi
 case "$cmd" in
 list)
         if [ ! -e $STATE ]; then
@@ -250,7 +261,13 @@ stop)
             usage
         fi
         shift
-        kill $(jshon -e servers -e "$name" -e pid < $STATE)
+        pid="$(jshon -e servers -e "$name" -e pid < $STATE 2>/dev/null)"
+        if [ -n "$pid" ]; then
+            kill $pid
+        else
+            echo no server for $name
+            exit 1
+        fi
 ;;
 clean)
         if [ -z "$1" ]; then
@@ -280,7 +297,9 @@ run)
         shift
         runCmd $server "$0" chain-ws "$@"
 ;;
-set) [ -n "$3" ] && subCmd send-cmd "$1" '[["set", "'$2'", '$3']]' || usage
+set)
+        echo SET: "$@" > /tmp/set-cmd
+        [ -n "$3" ] && subCmd send-cmd "$1" '[["set", "'$2'", '$3']]' || usage
 ;;
 put) [ -n "$3" ] && subCmd send-cmd "$1" '[["put", "'$2'", '$4', "'$3'"]]' || usage
 ;;
@@ -308,11 +327,14 @@ removeFirst) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeFirst", "'$2'", '$(es
 ;;
 removeAll) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeAll", "'$2'", '$(escape $3)']]' || usage
 ;;
+removeTree) [ -n "$2" ] && subCmd send-cmd "$1" '[["removeTree", "'$2'"]]' || usage
+;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
         exec "$@"
 ;;
 send-cmd)
+        echo SENDING: "$@" > /tmp/send-cmd
         echo "$*" >&4
         close
 ;;

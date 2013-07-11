@@ -423,9 +423,9 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
 
   _ = require('./lodash.min');
 
-  cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll'];
+  cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree'];
 
-  exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll'];
+  exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree'];
 
   warning_no_storage = 'warning_no_storage';
 
@@ -524,8 +524,6 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
       var isMyPeerKey, key, name, tmpMsg, x, x1, x2,
         _this = this;
       name = _arg[0];
-      console.log("@@@@@");
-      console.log("*** processMsg: " + msg);
       if (con.isConnected()) {
         if (__indexOf.call(cmds, name) >= 0) {
           if (name === 'response') {
@@ -896,7 +894,7 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
         if (storageMode !== storage_transient) {
           if (!oldInfo) {
             this.varStorage.keys.push(key);
-            this.newKeys = true;
+            this.varStorage.newKeys = this.newKeys = true;
           }
           return this.handleStorageCommand(con, cmd, function() {
             cmd[2] = value;
@@ -927,6 +925,10 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
     };
 
     Server.prototype.removeAll = function(con, cmd, cont) {
+      return this.handleStorageCommand(con, cmd, cont);
+    };
+
+    Server.prototype.removeTree = function(con, cmd, cont) {
       return this.handleStorageCommand(con, cmd, cont);
     };
 
@@ -1005,13 +1007,10 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
     };
 
     VarStorage.prototype.addKey = function(key, info) {
-      console.log("ADD KEY: " + key);
       if (!this.keyInfo[key]) {
         this.newKeys = true;
         this.keyInfo[key] = info;
         this.keys.push(key);
-      } else {
-        console.log("KEY " + key + " ALREADY PRESENT");
       }
       return info;
     };
@@ -1051,7 +1050,8 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
       var idx;
       delete this.keyInfo[key];
       delete this.values[key];
-      idx = _.sortedIndex(key, this.keys);
+      this.sortKeys();
+      idx = _.sortedIndex(this.keys, key);
       if (idx > -1) {
         return this.keys.splice(idx, 1);
       }
@@ -1105,7 +1105,6 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
           for (_i = 0, _len = keys.length; _i < _len; _i++) {
             key = keys[_i];
             this.handle(['get', key], blk, function(v) {
-              console.log("VALUE FOR " + key + " IS " + v);
               if (v) {
                 cmd.push(key, v);
               }
@@ -1144,13 +1143,9 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
         return errBlock(error_bad_storage_mode, "" + storageMode + " is not a valid storage mode");
       } else {
         oldInfo = this.keyInfo[key];
-        this.keyInfo[key] = storageMode = storageMode || this.keyInfo[key] || storage_memory;
+        storageMode = storageMode || this.keyInfo[key] || storage_memory;
         cmd[2] = value;
         if (storageMode !== storage_transient) {
-          if (!oldInfo) {
-            this.keys.push(key);
-            this.newKeys = true;
-          }
           return cont(this.setKey(key, value, info));
         }
       }
@@ -1165,7 +1160,15 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
       if (typeof this.values[key] !== 'object' || this.values[key] instanceof Array) {
         return errBlock(error_variable_not_object("" + key + " is not an object"));
       } else {
-        return cont(this.values[key][index] = value);
+        if (value === null) {
+          delete this.values[key][index];
+        } else {
+          this.values[key][index] = value;
+        }
+        if (_.isEmpty(this.values[key])) {
+          this.removeKey(key);
+        }
+        return cont(value);
       }
     };
 
@@ -1216,6 +1219,18 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
       }
     };
 
+    VarStorage.prototype.removeTree = function(_arg, errBlock, cont) {
+      var key, x, _i, _len, _ref, _results;
+      x = _arg[0], key = _arg[1];
+      _ref = this.keysForPrefix(key);
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        key = _ref[_i];
+        _results.push(this.removeKey(key));
+      }
+      return _results;
+    };
+
     return VarStorage;
 
   })();
@@ -1260,13 +1275,16 @@ require.define("/lib/proto.js",function(require,module,exports,__dirname,__filen
       return keys[i].match(initialPattern);
     });
     if (idx > -1) {
-      prefixPattern = "^" + prefix + "/";
+      console.log("FOUND KEY: " + keys[idx] + " AT INDEX: " + idx);
+      prefixPattern = initialPattern;
       idx--;
       while ((_ref1 = keys[++idx]) != null ? _ref1.match(prefixPattern) : void 0) {
         if (values[keys[idx]] != null) {
           result.push(keys[idx]);
         }
       }
+    } else {
+      console.log("NO KEYS FOR PREFIX: " + prefix + ", KEYS: " + keys);
     }
     return result;
   };
