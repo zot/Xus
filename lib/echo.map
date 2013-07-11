@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "file": "echo.js",
+  "sourceRoot": "..",
+  "sources": [
+    "examples/echo.coffee"
+  ],
+  "names": [],
+  "mappings": ";AAKA;CAAA,EAAA,GAAA;;CAAA,CAAA,CAAA,IAAM,CAAA;;CAAN,CAEA,CAAe,CAAf,GAAO,EAAQ;CACb,GAAA,IAAA;CAAA,EAAO,CAAP,KAAoB,CAAb;CAAyC,EAAD,CAAH,SAAA;CAArC,IAAyB;CAAhC,CACsB,CAAtB,CAAA,EAAA,KAAA;CACK,CAA2B,CAAM,CAAlC,CAAkC,CAAtC,GAAuC,EAAvC,OAAA;CAA6D,EAAR,EAAa,EAAN,IAAM,EAAb;CAArD,IAAsC;CALxC,EAEe;CAFf"
+}

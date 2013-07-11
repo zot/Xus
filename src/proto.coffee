@@ -3,6 +3,7 @@
 # License: ZLIB license
 ####
 
+require('source-map-support').install()
 exports = module.exports = require './base'
 require './transport'
 
@@ -347,9 +348,10 @@ exports.Server = class Server
     else
       if storageMode and storageMode isnt @varStorage.keyInfo[key] and @varStorage.keyInfo[key] is storage_permanent
         @remove con, key
+      oldInfo = @varStorage.keyInfo[key]
       @varStorage.keyInfo[key] = storageMode = storageMode || @varStorage.keyInfo[key] || storage_memory
       if storageMode isnt storage_transient
-        if !@varStorage.keyInfo[key]
+        if !oldInfo
           @varStorage.keys.push key
           @newKeys = true
         @handleStorageCommand con, cmd, ->
@@ -395,10 +397,14 @@ exports.VarStorage = class VarStorage
     handler = if k then @handlers[k] else @
     handler
   addKey: (key, info)->
+    console.log "ADD KEY: #{key}"
     if !@keyInfo[key]
       @newKeys = true
       @keyInfo[key] = info
       @keys.push key
+    else
+      console.log "KEY #{key} ALREADY PRESENT"
+    info
   sortKeys: ->
     if @newKeys
       @keys.sort()
@@ -417,7 +423,7 @@ exports.VarStorage = class VarStorage
     value
   removeKey: (key)->
     delete @keyInfo[key]
-    delete @varStorage.values[key]
+    delete @values[key]
     idx = _.sortedIndex key, @keys
     if idx > -1 then @keys.splice idx, 1
   isObject: (key)-> typeof @values[key] == 'object'
@@ -435,8 +441,10 @@ exports.VarStorage = class VarStorage
   value: (cmd, errBlock, cont)->
     [x, path, cookie, tree] = cmd
     if tree
-      keys = [path, @keysForPrefix(path)...]
-      console.log "GETTING VALUES FOR PATH: #{path} KEYS: #{JSON.stringify keys}"
+      console.log "KEYS: #{@keys}"
+      #keys = [path, @keysForPrefix(path)...]
+      keys = @keysForPrefix(path)
+      console.log "GETTING VALUES FOR PATH: #{path} KEYS: #{JSON.stringify keys}, ALL KEYS: #{@keys}"
       counter = keys.length
       blk = (args...)->
         counter = 0
@@ -459,10 +467,13 @@ exports.VarStorage = class VarStorage
     if storageMode and storageModes.indexOf(storageMode) is -1
       errBlock error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
     else
+      oldInfo = @keyInfo[key]
       @keyInfo[key] = storageMode = storageMode || @keyInfo[key] || storage_memory
       cmd[2] = value
       if storageMode isnt storage_transient
-        if !@keyInfo[key] then @keys.push key
+        if !oldInfo
+          @keys.push key
+          @newKeys = true
         cont(@setKey key, value, info)
   put: ([x, key, value, index], errBlock, cont)->
     if !@values[key] then @values[key] = {}
@@ -515,9 +526,11 @@ keysForPrefix = (keys, values, prefix)->
   result = []
   idx = _.find [0...keys.length], (i)-> keys[i].match initialPattern
   if idx > -1
+    #console.log "FOUND: #{keys[idx]}"
     prefixPattern = "^#{prefix}/"
-    if values[prefix]? then result.push prefix
-    (if values[prefix]? then result.push keys[idx]) while keys[++idx]?.match prefixPattern
+    #if values[prefix]? then result.push prefix
+    idx--
+    (if values[keys[idx]]? then result.push keys[idx]) while keys[++idx]?.match prefixPattern
   result
 
 caresAbout = (con, keyPrefixes)-> _.any keyPrefixes, (p)-> con.listening[p]

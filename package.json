@@ -1,19 +1,38 @@
 {
-    "author": "Bill Burdick <bill.burdick@gmail.com>",
-    "name": "Xus",
-    "description": "messaging and storage for local and remote peers",
-    "version": "0.1.0",
-    "main": "index",
-    "dependencies": {
-        "leveldb": "~0.7.1",
-        "lodash": "~0.6.1"
-    },
-    "devDependencies": {
-        "coffee-script": "~1.3.0",
-        "mocha": "~1.3.0"
-    },
-    "optionalDependencies": {},
-    "engines": {
-        "node": ">=0.6.13 <0.9.0"
-    }
+  "name": "Xus",
+  "version": "0.9.0",
+  "description": "messaging and storage for local and remote peers",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "dependencies": {
+    "browserify": "~1.15.5",
+    "comet.io": "~0.0.5",
+    "fs-ext": "~0.3.1",
+    "q": "~0.9.6",
+    "send": "~0.1.3",
+    "socket.io": "~0.9.10",
+    "source-map-support": "~0.1.8",
+    "ws": "~0.4.27"
+  },
+  "devDependencies": {
+    "coffee-script": "~1.6.3"
+  },
+  "scripts": {
+    "test": "bin/xus start bubba"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/zot/Xus.git"
+  },
+  "keywords": [
+    "messaging",
+    "storage"
+  ],
+  "author": "Bill Burdick",
+  "license": "ZLIB",
+  "bugs": {
+    "url": "https://github.com/zot/Xus/issues"
+  }
 }

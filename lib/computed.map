@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "file": "computed.js",
+  "sourceRoot": "..",
+  "sources": [
+    "examples/computed.coffee"
+  ],
+  "names": [],
+  "mappings": ";AAKA;CAAA,EAAA,GAAA;;CAAA,CAAA,CAAA,IAAM,CAAA;;CAAN,CAEA,CAAe,CAAf,GAAO,EAAQ;CACb,OAAA,GAAA;CAAA,EAAQ,CAAR,CAAA;CAAA,EACO,CAAP,KAAoB,CAAb;CAAyC,EAAD,CAAH,SAAA;CAArC,IAAyB;CADhC,CAEsB,CAAtB,CAAA,MAAA,CAAA;CACK,CAAyB,CAA9B,CAAI,KAA0B,EAA9B,QAAA;AAAiC,CAAH,IAAG,QAAA;CAAjC,IAA8B;CANhC,EAEe;CAFf"
+}

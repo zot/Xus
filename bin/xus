@@ -20,8 +20,6 @@ else
     export NODE_PATH="$BASE_DIR/lib:$BASE_DIR/examples"
 fi
 
-echo NODE_PATH: $NODE_PATH
-
 XUS_SAVED_PATH="${XUS_SAVED_PATH:-$PATH}"
 
 PATH="$XUS_SAVED_PATH:$BASE_DIR/bin:$BASE_DIR/examples"
@@ -30,21 +28,21 @@ STATE="$HOME/.xus/state"
 
 usage() {
     cat <<EOF
-$(basename $1) <command> [<options>]
+$(basename $1) COMMAND [OPTIONS]
 
 COMMANDS
 list
-start <name> [-w <addr>] [-e <expr>] [-x <cmd>]...  start a xus instance
-stop <name>                                         stop a xus instance
-run <name> <command> [<arg>]...                     run command in context of named xus instance
-clean <name> | -a                                   clear info for one or all xus instances
-get [-a] [-v] <name> <key>...                       get a value, -a: include children, -v: value only
-set <name> <key> <value>                            set a value
-listen <name> [-m] <key>...                         listen for keys, -m sets this peer as the master
-put <name> <key> <index> <value>                    set the value of a key in a variable
-splice <name> <key> <index> <count> ...             insert a value into an array
-removeFirst <name> <key> <value>                    remove first occurrence of value from array
-removeAll <name> <key> <value>                      remove all occurrences of value from array
+start NAME [-w ADDR] [-e EXPR] [-x CMD]...  start a xus instance
+stop NAME                                   stop a xus instance
+run NAME COMMAND [ARG]...                   run command in context of named xus instance
+clean NAME | -a                             clear info for one or all xus instances
+get NAME [-a] [-v] KEY...                   get a value, -a: include children, -v: value only
+set NAME KEY VALUE                          set a value
+listen NAME [-m] KEY...                     listen for keys, -m sets this peer as the master
+put NAME KEY INDEX VALUE                    set the value of a key in a variable
+splice NAME KEY INDEX COUNT ...             insert a value into an array
+removeFirst NAME KEY VALUE                  remove first occurrence of value from array
+removeAll NAME KEY VALUE                    remove all occurrences of value from array
 EOF
     exit 1
 }
@@ -78,9 +76,21 @@ removeEntry() {
 }
 
 getPort() {
-    state="$(<$STATE)"
-    if [ -n "$state" ]; then
-        echo "$state" | jshon -e servers -e "$1" -e port
+    if expr "$1" : "@.*" > /dev/null; then
+        expr "$1" : '.*:\(.*\)'
+    else
+        state="$(<$STATE)"
+        if [ -n "$state" ]; then
+            echo "$state" | jshon -e servers -e "$1" -e port
+        fi
+    fi
+}
+
+getHost() {
+    if expr "$1" : "@.*" > /dev/null; then
+        expr "$1" : '@\(.*\):.*'
+    else
+        echo localhost
     fi
 }
 
@@ -193,9 +203,10 @@ runCmd() {
     fi
     export XUS_SERVER="$1"
     export XUS_PORT=$(getPort "$1")
+    export XUS_HOST=$(getHost "$1")
     if [ -n "$XUS_PORT" ]; then
         shift
-        socat TCP:localhost:$XUS_PORT "EXEC:$*,nofork,fdin=3,fdout=4"
+        socat TCP:$XUS_HOST:$XUS_PORT "EXEC:$*,nofork,fdin=3,fdout=4"
     fi
 }
 
@@ -226,17 +237,20 @@ list)
 start)
         name=$1
         shift
-        #node --no-deprecation -e "xus = require('./lib/main.js'); xus.run()" $name "$@"
-        echo XUS START EXTRA: $@
-        #$NODE --no-deprecation -e "xus = require('main.js'); xus.run()" $name "$@"
         $NODE -e "xus = require('main.js'); xus.run()" $name "$@"
         if [ $? != 2 ]; then
             removeEntry $name
         fi
 ;;
 stop)
-        echo stop not implemented, yet
-        exit 1
+        name="$1"
+        if [ -z "$name" ]; then
+            echo No server name
+            echo
+            usage
+        fi
+        shift
+        kill $(jshon -e servers -e "$name" -e pid < $STATE)
 ;;
 clean)
         if [ -z "$1" ]; then

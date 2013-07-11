@@ -35,7 +35,7 @@ clean: FRC
 FRC:
 
 lib/%.js: src/%.coffee
-	node_modules/coffee-script/bin/coffee -o lib -c $<
+	node_modules/coffee-script/bin/coffee -m -o lib -c $<
 
 lib/%.js: examples/%.coffee
-	node_modules/coffee-script/bin/coffee -o lib -c $<
+	node_modules/coffee-script/bin/coffee -m -o lib -c $<
