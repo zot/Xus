@@ -6,7 +6,6 @@
 {d} = exports = module.exports = require './base'
 {error_bad_connection} = require './proto'
 _ = require './lodash.min'
-fs = require 'fs'
 
 ####
 # Codecs -- used by connections to encode and decode messages
@@ -42,7 +41,7 @@ exports.JSONCodec = JSONCodec =
         con.send()
 
 ####
-# 
+#
 # CONNECTION CLASS
 #
 # isConnected() -- returns whether the connection is connected
@@ -93,43 +92,6 @@ exports.Connection = class Connection
       @codec.send @, q
   newData: (data)-> @verbose "#{d @} read data: #{data}"; @codec.newData @, data
   processBatch: (batch)-> @master.processBatch @, batch
-
-exports.FdConnection = class FdConnection extends Connection
-  constructor: (@input, @output)->
-    super null, @null
-    @q = []
-    @writing = false
-  setMaster: (@master)->
-    if @master
-      @master.addConnection @
-      @read new Buffer 65536
-  basicClose: ->
-    fs.close @input, (err)-> console.log "Error closing connection: #{err.stack}"
-    fs.close @output, (err)-> console.log "Error closing connection: #{err.stack}"
-  connected: true
-  read: (buf)->
-    fs.read @input, buf, 0, buf.length, null, (err, bytesRead)=>
-      if err then @verbose "#{d @} disconnect"; @master.disconnect @
-      else
-        @verbose "#{d @} data '#{data}'"
-        @newData buf.toString(null, 0, bytesRead)
-        @read buf
-  write: (str)->
-    if str.length
-      @q.push str
-      if !@writing
-        @writing = true
-        @writeNext()
-  writeNext: ->
-    buf = new Buffer @q[0]
-    splice @q, 0, 1
-    writeBuffer buf
-  writeBuffer: (buf)->
-    fs.write @output, buf, 0, buf.length, null, (err, written)=>
-      if err then @verbose "#{d @} disconnect"; @master.disconnect @
-      else if written < buf.length then @writeBuffer buf.slice(written)
-      else if @q.length then @writeNext()
-      else @writing = false
 
 exports.SocketConnection = class SocketConnection extends Connection
   constructor: (@master, @con, initialData)->
@@ -225,7 +187,7 @@ exports.CometClientConnection = class CometClientConnection extends Connection
 #
 # muxed connection -> processBatch -> endpoint
 # endpoint -> send(endpoint, batch) -> muxed connection
-# 
+#
 #####
 exports.ProxyMux = class ProxyMux
   constructor: (@handler)->
@@ -324,7 +286,7 @@ class ConnectionEndpoint # connected to an endpoint
 # Xus <-> mux; acts as a connection to xus
 #
 # treats mux as a codec
-# 
+#
 # Xus -> addCmd, send -> proxy
 # proxy -> processBatch -> Xus
 #####

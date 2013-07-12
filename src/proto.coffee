@@ -3,7 +3,6 @@
 # License: ZLIB license
 ####
 
-require('source-map-support').install()
 exports = module.exports = require './base'
 require './transport'
 
@@ -516,7 +515,9 @@ exports.VarStorage = class VarStorage
       val = @values[key]
       val.splice idx, 1 while (idx = val.indexOf value) > -1
       cont val
-  removeTree: ([x, key], errBlock, cont)-> @removeKey key for key in @keysForPrefix key
+  removeTree: ([x, key], errBlock, cont)->
+    @removeKey key for key in @keysForPrefix key
+    cont()
 
 exports.renameVars = renameVars = (keys, values, handlers, oldName, newName)->
   oldPrefix = "peer/#{oldName}"

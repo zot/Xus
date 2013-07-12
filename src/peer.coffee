@@ -54,6 +54,7 @@ exports.Peer = class Peer
   splice: (key, spliceArgs...)-> @addCmd ['splice', key, spliceArgs...]
   removeFirst: (key, value)-> @addCmd ['removeFirst', key, value]
   removeAll: (key, value)-> @addCmd ['removeAll', key, value]
+  removeTree: (key, value)-> @addCmd ['removeTree', key]
   manage: (key, handler)->
   # INTERNAL API
   processBatch: (con, batch)->
@@ -106,7 +107,7 @@ exports.Peer = class Peer
       while @varStorage.keys[idx].match prefix
         msg.push @varStorage.keys[idx], @varStorage.values[@varStorage.keys[idx]]
       callback null, null, null, msg, [msg]
-  setsForTree: (msg)-> ['set', key, msg[i + 1]] for key, i in msg[4..] by 2
+  setsForTree: (msg)-> ['set', msg[i], msg[i + 1]] for i in [4..msg.length - 2] by 2
   grabTree: (key, callback)->
     #if @name then key = @personalize key
     if !@treeListeners[key] then @treeListeners[key] = []
@@ -219,3 +220,4 @@ class DelegationHandler
   splice: (reqId, cmd)->
   removeFirst: (reqId, cmd)->
   removeAll: (reqId, cmd)->
+  removeTree: (reqId, cmd)->

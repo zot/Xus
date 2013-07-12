@@ -3,6 +3,7 @@
 # License: ZLIB license
 ####
 
+require('source-map-support').install()
 {log} = exports = module.exports = require './base'
 {startWebSocketServer} = require './websocket'
 {Server} = exports = require './peer'
@@ -96,6 +97,43 @@ parseAddr = (addr)->
   [host, port] = parts = addr.split ':'
   if parts.length > 2 then throw new Error "Bad address format, expected [host:]port, but got #{addr}"
   (port && [host || null, port]) || [null, host || null]
+
+exports.FdConnection = class FdConnection extends exports.Connection
+  constructor: (@input, @output)->
+    super null, @null
+    @q = []
+    @writing = false
+  setMaster: (@master)->
+    if @master
+      @master.addConnection @
+      @read new Buffer 65536
+  basicClose: ->
+    fs.close @input, (err)-> console.log "Error closing connection: #{err.stack}"
+    fs.close @output, (err)-> console.log "Error closing connection: #{err.stack}"
+  connected: true
+  read: (buf)->
+    fs.read @input, buf, 0, buf.length, null, (err, bytesRead)=>
+      if err then @verbose "#{d @} disconnect"; @master.disconnect @
+      else
+        @verbose "#{d @} data '#{data}'"
+        @newData buf.toString(null, 0, bytesRead)
+        @read buf
+  write: (str)->
+    if str.length
+      @q.push str
+      if !@writing
+        @writing = true
+        @writeNext()
+  writeNext: ->
+    buf = new Buffer @q[0]
+    splice @q, 0, 1
+    writeBuffer buf
+  writeBuffer: (buf)->
+    fs.write @output, buf, 0, buf.length, null, (err, written)=>
+      if err then @verbose "#{d @} disconnect"; @master.disconnect @
+      else if written < buf.length then @writeBuffer buf.slice(written)
+      else if @q.length then @writeNext()
+      else @writing = false
 
 exports.run = run
 exports.setup = setup

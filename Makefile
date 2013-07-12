@@ -3,9 +3,9 @@
 # License: ZLIB license
 ####
 
-SRC=transport proto browser peer base
+SRC=transport proto browser peer base websocket
 EXAMPLES=echo computed leisureService
-CMD=main pfs websocket
+CMD=main pfs
 JS=$(SRC:%=lib/%.js)
 CMD_JS=$(CMD:%=lib/%.js)
 EX_JS=$(EXAMPLES:%=lib/%.js)
@@ -26,7 +26,7 @@ jslint: $(ALL_JS)
 coffeelint: $(ALL_SRC)
 	for i in $(ALL_SRC); do node_modules/coffeelint/bin/coffeelint -f coffeelint.json $$i; done
 
-xus.js: $(CMD_JS) $(JS)
+xus.js: $(JS)
 	node_modules/browserify/bin/cmd.js lib/browser.js -o xus.js
 
 clean: FRC

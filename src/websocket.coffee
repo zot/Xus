@@ -54,8 +54,8 @@ exports.addDirHandler = addDirHandler = (urlPat, dir)->
   urlHandlers.push handler
 
 createHandler = (config)-> (req, res)->
-  req.on 'end', ->
-    nextHandler 0, url.parse(req.url).pathname, req, res
+  #req.on 'end', ->
+  nextHandler 0, url.parse(req.url).pathname, req, res
 
 nextHandler = (index, pathname, req, res)->
   handler = urlHandlers[index]
