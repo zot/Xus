@@ -67,7 +67,9 @@ exports.JSONCodec = JSONCodec =
 
 exports.Connection = class Connection
   write: (str)-> @master.disconnect this, error_bad_connection, "Connection has no 'write' method"
-  basicClose: -> @master.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
+  basicClose: ->
+    @verbose "CLOSING: #{@}"
+    @master.disconnect this, error_bad_connection, "Connection has no 'disconnect' method"
   constructor: (master, @codec, @saved = '')->
     @codec = @codec ? JSONCodec
     try
@@ -87,24 +89,26 @@ exports.Connection = class Connection
   addCmd: (cmd)-> @q.push cmd
   send: ->
     if @connected && @q.length
-      @verbose "#{d @} SENDING #{JSON.stringify @q}"
+      @verbose "#{@} SENDING #{JSON.stringify @q}"
       [q, @q] = [@q, []]
       @codec.send @, q
-  newData: (data)-> @verbose "#{d @} read data: #{data}"; @codec.newData @, data
+  newData: (data)-> @verbose "#{@} read data: #{data}"; @codec.newData @, data
   processBatch: (batch)-> @master.processBatch @, batch
+  toString: -> "#{@constructor.name} [#{@.peerPath ? '??'}]"
 
 exports.SocketConnection = class SocketConnection extends Connection
   constructor: (@master, @con, initialData)->
     super @master, null, (initialData ? '').toString()
-    @con.on 'data', (data) => @verbose "#{d @} data: '#{data}'"; @newData data
-    @con.on 'end', (hadError)=> @verbose "#{d @} disconnect"; @master.disconnect @
-    @con.on 'close', (hadError)=> @verbose "#{d @} disconnect"; @master.disconnect @
-    @con.on 'error', (hadError)=> @verbose "#{d @} disconnect"; @master.disconnect @
+    @con.on 'data', (data) => @verbose "#{@} data: '#{data}'"; @newData data
+    @con.on 'end', (hadError)=> @verbose "#{@} disconnect"; @master.disconnect @
+    @con.on 'close', (hadError)=> @verbose "#{@} disconnect"; @master.disconnect @
+    @con.on 'error', (hadError)=> @verbose "#{@} disconnect"; @master.disconnect @
     @master.addConnection @
   connected: true
   write: (str)-> @con.write str
   basicClose: ->
     try
+      @verbose "CLOSING: #{@}"
       @con.destroy()
     catch err
       console.log "Error closing connection: #{err.stack}"
@@ -127,7 +131,7 @@ exports.WebSocketConnection = class WebSocketConnection extends Connection
   sendPending: ->
     console.log "CHANGING WRITE METHOD"
     @write = (str)->
-      @verbose "#{d @} writing: #{str}";
+      @verbose "#{@} writing: #{str}";
       @con.send str
     for msg in @pending
       @write msg
@@ -135,6 +139,7 @@ exports.WebSocketConnection = class WebSocketConnection extends Connection
     @sendPending = ->
   basicClose: ->
     try
+      @verbose "CLOSING: #{@}"
       @con.terminate()
     catch err
       console.log "Error closing connection: #{err.stack}"
@@ -151,9 +156,10 @@ exports.CometConnection = class CometConnection extends Connection
     @socket.on 'xusCmd', (data)=> @verbose "MESSAGE: #{data.str}"; @newData data.str
   connected: true
   write: (str)->
-    @verbose "#{d @} writing: #{str}"
+    @verbose "#{@} writing: #{str}"
     @socket.emit 'xusCmd', {str: str}
   basicClose: ->
+    @verbose "CLOSING: #{@}"
     if !@socket._zombi then @socket.emit 'xusTerminate', ''
     deadComets[@socket._uuid] = true
 
@@ -171,12 +177,13 @@ exports.CometClientConnection = class CometClientConnection extends Connection
   sendPending: ->
     console.log "CHANGING WRITE METHOD"
     @write = (str)->
-      @verbose "#{d @} writing: #{str}"
+      @verbose "#{@} writing: #{str}"
       @socket.emit 'xusCmd', {str: str}
     for msg in @pending
       @write msg
     @pending = null
   basicClose: ->
+    @verbose "CLOSING: #{@}"
     if !@socket._zombi then @socket.emit 'xus.terminate', ''
     deadComets[@socket._uuid] = true
 
@@ -255,7 +262,7 @@ exports.ProxyMux = class ProxyMux
     endpoint.newConnection = false
     @mainSend b
   mainSend: (batch)->
-    @verbose "#{d @} proxy forwarding muxed batch: #{JSON.stringify batch} to #{@mainConnection.constructor.name}"
+    @verbose "#{@} proxy forwarding muxed batch: #{JSON.stringify batch} to #{@mainConnection.constructor.name}"
     @mainConnection.q = batch
     @mainConnection.send()
   prepare: (con)->
@@ -295,7 +302,9 @@ class XusEndpoint extends Connection # connected to an endpoint
     super @master, @proxy
     @verbose = @proxy.verbose
   newConnection: false
-  basicClose: -> @proxy.disconnect @
+  basicClose: ->
+    @verbose "CLOSING: #{@}"
+    @proxy.disconnect @
   send: ->
     @verbose "SEND #{JSON.stringify @q}"
     [q, @q] = [@q, []]

@@ -562,7 +562,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
 
   _ = require('./lodash.min');
 
-  cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree'];
+  cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree', 'dump'];
 
   exports.setCmds = setCmds = ['set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree'];
 
@@ -603,8 +603,9 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
 
     Server.prototype.anonymousPeerCount = 0;
 
-    function Server() {
-      console.log("NEW XUS SERVER");
+    function Server(name) {
+      this.name = name;
+      console.log("NEW XUS SERVER: " + this);
       this.connections = [];
       this.peers = {};
       this.varStorage = new VarStorage(this);
@@ -671,6 +672,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
             tmpMsg = msg;
           }
           x = tmpMsg[0], key = tmpMsg[1];
+          key = key != null ? key : '';
           if (typeof key === 'string') {
             key = tmpMsg[1] = key.replace(new RegExp('^this/'), "" + con.peerPath + "/");
           }
@@ -805,41 +807,48 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     Server.prototype.disconnect = function(con, errorType, msg) {
+      this.verbose("" + this + " DISCONNECT " + con);
       this.primDisconnect(con, errorType, msg);
       if (this.nextBatch) {
         return this.processBatch(con, this.nextBatch, true);
       }
     };
 
+    Server.prototype.toString = function() {
+      return "Server [" + this.name + "]";
+    };
+
     Server.prototype.primDisconnect = function(con, errorType, msg) {
       var batch, idx, key, num, peerKey, peerKeys, _i, _j, _len, _len1, _ref;
-      idx = this.connections.indexOf(con);
-      batch = [];
-      if (idx > -1) {
-        this.varStorage.setKey(con.linksPath, []);
-        batch = this.setLinks(con);
-        peerKey = con.peerPath;
-        peerKeys = this.varStorage.keysForPrefix(peerKey);
-        if (con.name) {
-          delete this.peers[con.name];
-        }
-        for (_i = 0, _len = peerKeys.length; _i < _len; _i++) {
-          key = peerKeys[_i];
-          this.varStorage.removeKey(key);
-        }
-        this.connections.splice(idx, 1);
-        if (msg) {
-          this.error(con, errorType, msg);
-        }
-        con.send();
-        con.close();
-        _ref = con.requests;
-        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-          num = _ref[_j];
-          delete this.pendingRequests[num];
-        }
-        if (con === this.master) {
-          this.exit();
+      if (!con.disconnected) {
+        con.disconnected = true;
+        idx = this.connections.indexOf(con);
+        batch = [];
+        if (idx > -1) {
+          batch = this.setLinks(con);
+          peerKey = con.peerPath;
+          peerKeys = this.varStorage.keysForPrefix(peerKey);
+          if (con.name) {
+            delete this.peers[con.name];
+          }
+          for (_i = 0, _len = peerKeys.length; _i < _len; _i++) {
+            key = peerKeys[_i];
+            this.varStorage.removeKey(key);
+          }
+          this.connections.splice(idx, 1);
+          if (msg) {
+            this.error(con, errorType, msg);
+          }
+          con.send();
+          con.close();
+          _ref = con.requests;
+          for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+            num = _ref[_j];
+            delete this.pendingRequests[num];
+          }
+          if (con === this.master) {
+            this.exit();
+          }
         }
       }
       return false;
@@ -877,15 +886,15 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     Server.prototype.setLinks = function(con) {
-      var l, old, _i, _len, _ref, _results;
+      var l, old, _i, _len, _ref, _ref1, _results;
       this.verbose("PRIM SET LINKS, LINKS PATH: " + con.linksPath + ", NEW " + (JSON.stringify(this.varStorage.values[con.linksPath])) + ", OLD: " + (JSON.stringify(con.links)));
       old = {};
       for (l in con.links) {
         old[l] = true;
       }
-      _ref = this.varStorage.values[con.linksPath];
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        l = _ref[_i];
+      _ref1 = (_ref = this.varStorage.values[con.linksPath]) != null ? _ref : [];
+      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+        l = _ref1[_i];
         if (!old[l]) {
           this.addLink(con, l);
         } else {
@@ -1014,6 +1023,17 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
           con.addCmd(cmd);
           return cont();
         });
+      }
+    };
+
+    Server.prototype.dump = function(con, cmd, cont) {
+      if (this.diag) {
+        return this.handleStorageCommand(con, cmd, function(newCmd) {
+          con.addCmd(newCmd);
+          return cont();
+        });
+      } else {
+        return this.error(con, error_bad_peer_request, "Diag mode not turned on");
       }
     };
 
@@ -1186,12 +1206,14 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     VarStorage.prototype.removeKey = function(key) {
-      var idx;
+      var idx, newKeys;
+      this.verbose("REMOVING KEY: " + key);
       delete this.keyInfo[key];
       delete this.values[key];
-      this.sortKeys();
+      newKeys = true;
       idx = _.sortedIndex(this.keys, key);
       if (idx > -1) {
+        this.verbose("REMOVED " + key + " (" + this.keys[idx] + ")");
         return this.keys.splice(idx, 1);
       }
     };
@@ -1224,6 +1246,17 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
       this.handlers[path] = obj;
       this.addKey(path, 'handler');
       return obj;
+    };
+
+    VarStorage.prototype.dump = function(con, cmd, cont) {
+      var key, newCmd, _i, _len, _ref;
+      newCmd = ['value', '', null, true, 'keys', this.keys];
+      _ref = this.keys;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        key = _ref[_i];
+        newCmd.push(key, this.values[key]);
+      }
+      return cont(newCmd);
     };
 
     VarStorage.prototype.value = function(cmd, errBlock, cont) {
@@ -1307,6 +1340,9 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
         if (_.isEmpty(this.values[key])) {
           this.removeKey(key);
         }
+        if (!this.keyInfo[key]) {
+          this.addKey(key, storage_memory);
+        }
         return cont(value);
       }
     };
@@ -1325,6 +1361,9 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
           args[0] = this.values[key].length + args[0] + 1;
         }
         (_ref = this.values[key]).splice.apply(_ref, args);
+        if (!this.keyInfo[key]) {
+          this.addKey(key, storage_memory);
+        }
         return cont(this.values[key]);
       }
     };
@@ -1501,6 +1540,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     Connection.prototype.basicClose = function() {
+      this.verbose("CLOSING: " + this);
       return this.master.disconnect(this, error_bad_connection, "Connection has no 'disconnect' method");
     };
 
@@ -1545,19 +1585,24 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     Connection.prototype.send = function() {
       var q, _ref;
       if (this.connected && this.q.length) {
-        this.verbose("" + (d(this)) + " SENDING " + (JSON.stringify(this.q)));
+        this.verbose("" + this + " SENDING " + (JSON.stringify(this.q)));
         _ref = [this.q, []], q = _ref[0], this.q = _ref[1];
         return this.codec.send(this, q);
       }
     };
 
     Connection.prototype.newData = function(data) {
-      this.verbose("" + (d(this)) + " read data: " + data);
+      this.verbose("" + this + " read data: " + data);
       return this.codec.newData(this, data);
     };
 
     Connection.prototype.processBatch = function(batch) {
       return this.master.processBatch(this, batch);
+    };
+
+    Connection.prototype.toString = function() {
+      var _ref;
+      return "" + this.constructor.name + " [" + ((_ref = this.peerPath) != null ? _ref : '??') + "]";
     };
 
     return Connection;
@@ -1573,19 +1618,19 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
       this.con = con;
       SocketConnection.__super__.constructor.call(this, this.master, null, (initialData != null ? initialData : '').toString());
       this.con.on('data', function(data) {
-        _this.verbose("" + (d(_this)) + " data: '" + data + "'");
+        _this.verbose("" + _this + " data: '" + data + "'");
         return _this.newData(data);
       });
       this.con.on('end', function(hadError) {
-        _this.verbose("" + (d(_this)) + " disconnect");
+        _this.verbose("" + _this + " disconnect");
         return _this.master.disconnect(_this);
       });
       this.con.on('close', function(hadError) {
-        _this.verbose("" + (d(_this)) + " disconnect");
+        _this.verbose("" + _this + " disconnect");
         return _this.master.disconnect(_this);
       });
       this.con.on('error', function(hadError) {
-        _this.verbose("" + (d(_this)) + " disconnect");
+        _this.verbose("" + _this + " disconnect");
         return _this.master.disconnect(_this);
       });
       this.master.addConnection(this);
@@ -1600,6 +1645,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     SocketConnection.prototype.basicClose = function() {
       var err;
       try {
+        this.verbose("CLOSING: " + this);
         return this.con.destroy();
       } catch (_error) {
         err = _error;
@@ -1659,7 +1705,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
       var msg, _i, _len, _ref;
       console.log("CHANGING WRITE METHOD");
       this.write = function(str) {
-        this.verbose("" + (d(this)) + " writing: " + str);
+        this.verbose("" + this + " writing: " + str);
         return this.con.send(str);
       };
       _ref = this.pending;
@@ -1674,6 +1720,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     WebSocketConnection.prototype.basicClose = function() {
       var err;
       try {
+        this.verbose("CLOSING: " + this);
         return this.con.terminate();
       } catch (_error) {
         err = _error;
@@ -1713,13 +1760,14 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     CometConnection.prototype.connected = true;
 
     CometConnection.prototype.write = function(str) {
-      this.verbose("" + (d(this)) + " writing: " + str);
+      this.verbose("" + this + " writing: " + str);
       return this.socket.emit('xusCmd', {
         str: str
       });
     };
 
     CometConnection.prototype.basicClose = function() {
+      this.verbose("CLOSING: " + this);
       if (!this.socket._zombi) {
         this.socket.emit('xusTerminate', '');
       }
@@ -1758,7 +1806,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
       var msg, _i, _len, _ref;
       console.log("CHANGING WRITE METHOD");
       this.write = function(str) {
-        this.verbose("" + (d(this)) + " writing: " + str);
+        this.verbose("" + this + " writing: " + str);
         return this.socket.emit('xusCmd', {
           str: str
         });
@@ -1772,6 +1820,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     CometClientConnection.prototype.basicClose = function() {
+      this.verbose("CLOSING: " + this);
       if (!this.socket._zombi) {
         this.socket.emit('xus.terminate', '');
       }
@@ -1890,7 +1939,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     };
 
     ProxyMux.prototype.mainSend = function(batch) {
-      this.verbose("" + (d(this)) + " proxy forwarding muxed batch: " + (JSON.stringify(batch)) + " to " + this.mainConnection.constructor.name);
+      this.verbose("" + this + " proxy forwarding muxed batch: " + (JSON.stringify(batch)) + " to " + this.mainConnection.constructor.name);
       this.mainConnection.q = batch;
       return this.mainConnection.send();
     };
@@ -1954,6 +2003,7 @@ define=="function"&&typeof define.amd=="object"&&define.amd?(e._=s,define(functi
     XusEndpoint.prototype.newConnection = false;
 
     XusEndpoint.prototype.basicClose = function() {
+      this.verbose("CLOSING: " + this);
       return this.proxy.disconnect(this);
     };
 

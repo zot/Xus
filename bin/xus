@@ -49,6 +49,7 @@ splice NAME KEY INDEX COUNT ...             insert a value into an array (negati
 removeFirst NAME KEY VALUE                  remove first occurrence of value from array
 removeAll NAME KEY VALUE                    remove all occurrences of value from array
 removeTree NAME KEY                         remove a key ane all of its children
+dump                                        dump all variables in server, if server is in diag mode
 EOF
     exit $EXIT
 }
@@ -160,7 +161,7 @@ showVars() {
                     echo -n "$(echo "$line" | jshon -e 0 -u) "
                 fi
                 echo "$line" | jshon -e 1
-            line=$(echo "$line" | jshon -d 0 -d 0)
+                line=$(echo "$line" | jshon -d 0 -d 0)
             done
         elif [ "$cmd" = error ]; then
             echo ERROR: $(echo "$batch" | jshon -e 0 | jshon -d 0 | jshon -a -u)
@@ -329,6 +330,8 @@ removeAll) [ -n "$3" ] && subCmd send-cmd "$1" '[["removeAll", "'$2'", '$(escape
 ;;
 removeTree) [ -n "$2" ] && subCmd send-cmd "$1" '[["removeTree", "'$2'"]]' || usage
 ;;
+dump) subCmd dump-cmd "$@" || usage
+;;
 chain-ws)
         export XUS_PEER="$(wsConnect | jshon -e 0 -e 2 -u)"
         exec "$@"
@@ -355,6 +358,17 @@ get-cmd)
         done
         echo ']' >&4
         showVars $args
+        close
+;;
+dump-cmd)
+        if [ "$1" = -a ]; then
+            tree=true
+            shift
+        else
+            tree=false
+        fi
+        echo '[["dump"]]' >&4
+        showVars
         close
 ;;
 listen-cmd)

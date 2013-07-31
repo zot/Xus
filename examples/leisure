@@ -10,7 +10,10 @@
 ###   XUS_DIR -- the directory containing the Xus distro (parent of examples)
 ###   LEISURE_DIR -- the directory containing the Leisure distro
 ###   OPEN -- the path to chrome (defaults to /etc/alternatives/gnome-www-browser)
+###   LEISURE_STORAGE -- directory to serve for leisure files (defaults to LEISURE_DIR)
 ###
+
+LEISURE_STORAGE=${LEISURE_STORAGE:-$LEISURE_DIR}
 
 usage() {
     cat <<EOF
@@ -57,7 +60,8 @@ start)
         shift 2
         verbose=""
         addr=""
-        url="doc.html"
+        #url="doc.html"
+        url="drive.html"
         size=""
         requirements=""
         while true; do
@@ -100,7 +104,7 @@ start)
             esac
         done
         echo URL: $url, extra: $extra
-        $XUS start "$name" $verbose $addr $requirements -p -u '/leisure' $LEISURE_DIR -x "$cmd" $extra
+        $XUS start "$name" $verbose $addr $requirements -p -u '/leisure' $LEISURE_DIR -u /storage "$LEISURE_STORAGE" -x "$cmd" $extra
 ;;
 cat)
         echo -E "[$($XUS get $2 leisure/document | sed -e 's/[^ ]* //')]" | jshon -e 0 -u
@@ -125,11 +129,11 @@ eval-cmd)
         shift
         result="peer/$XUS_PEER/public/exprResult"
         echo '[["set", "peer/'$XUS_PEER'/listen", ["'$result'"]],["set", "leisure/evalExpr", ["'"$*"'", "'$result'"]]]' >&4
-        read line <&3
+        read -r line <&3
         if [ "$(echo $line | jshon -l)" != 1 ]; then
             evalResult "$(echo $line | jshon -d 0)"
         else
-            read line <&3
+            read -r line <&3
             evalResult "$line"
         fi
 ;;
@@ -147,7 +151,7 @@ repl-cmd)
         fi
         result="peer/$XUS_PEER/public/exprResult"
         echo '['$master'["set", "peer/'$XUS_PEER'/listen", ["'$result'"]]]' >&4
-        read line <&3
+        read -r line <&3
         while true; do
             read -p "Leisure> " -e input
             echo '[["set", "leisure/evalExpr", ["'"$input"'", "'$result'"]]]' >&4

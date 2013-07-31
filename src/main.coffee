@@ -34,6 +34,7 @@ setup = (cont)->
 run = ->
   setup (s)->
     config =
+      diag: false
       proxy:false
       verbose: ->
       addr: null
@@ -61,6 +62,9 @@ run = ->
             dir = path.resolve args[++i]
             #exports.dirMap.push [pattern, new RegExp("^#{dir}/"), "#{dir}/"]
             exports.addDirHandler pattern, dir
+          when '-t'
+            config.diag = true
+            console.log "Diag mode activated"
           else
             config.args = args[i...]
             i = args.length
@@ -81,7 +85,8 @@ run = ->
         require(file).main(master, config) for file in requirements
 
 startXus = (config, httpServer, thenBlock)->
-  exports.xusServer = xusServer = new Server()
+  exports.xusServer = xusServer = new Server(config.name)
+  xusServer.diag = config.diag
   xusServer.exit = -> process.exit()
   xusServer.verbose = config.verbose
   xusServer.verbose "Starting Xus"

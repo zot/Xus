@@ -32,7 +32,7 @@ _ = require './lodash.min'
 # Response format: ['response', requestId, cmd]
 ####
 
-cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree']
+cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll', 'removeTree', 'dump']
 
 ####
 # Commands
@@ -60,6 +60,9 @@ cmds = ['response', 'value', 'set', 'put', 'splice', 'removeFirst', 'removeAll',
 #
 # removeTree key
 #   removes key and all of its children
+#
+# dump
+#   if server is running in diagnostic mode, dump fetches a value cmd containing all known data
 #
 ####
 
@@ -120,8 +123,8 @@ exports.Server = class Server
   verbose: ->
   newKeys: false
   anonymousPeerCount: 0
-  constructor: ->
-    console.log "NEW XUS SERVER"
+  constructor: (@name)->
+    console.log "NEW XUS SERVER: #{@}"
     @connections = []
     @peers = {}
     @varStorage = new VarStorage @
@@ -159,6 +162,7 @@ exports.Server = class Server
       if name in cmds
         if name is 'response' then [x1, x2, tmpMsg] = msg else tmpMsg = msg
         [x, key] = tmpMsg
+        key = key ? ''
         if typeof key is 'string'
           key = tmpMsg[1] = key.replace new RegExp('^this/'), "#{con.peerPath}/"
         isMyPeerKey = key.match("^#{con.peerPath}/")
@@ -235,24 +239,28 @@ exports.Server = class Server
     newVL.sort()
     @varStorage.setKey "#{newPrefix}/listen", newVL
   disconnect: (con, errorType, msg)->
+    @verbose "#{@} DISCONNECT #{con}"
     @primDisconnect con, errorType, msg
     if @nextBatch then @processBatch con, @nextBatch, true
+  toString: -> "Server [#{@name}]"
   primDisconnect: (con, errorType, msg)->
-    idx = @connections.indexOf con
-    batch = []
-    if idx > -1
-      @varStorage.setKey con.linksPath, []
-      batch = @setLinks con
-      peerKey = con.peerPath
-      peerKeys = @varStorage.keysForPrefix peerKey
-      if con.name then delete @peers[con.name]
-      @varStorage.removeKey key for key in peerKeys # this could be more efficient, but does it matter?
-      @connections.splice idx, 1
-      if msg then @error con, errorType, msg
-      con.send()
-      con.close()
-      delete @pendingRequests[num] for num in con.requests
-      if con is @master then @exit()
+    if !con.disconnected
+      con.disconnected = true
+      idx = @connections.indexOf con
+      batch = []
+      if idx > -1
+        #@varStorage.setKey con.linksPath, []
+        batch = @setLinks con
+        peerKey = con.peerPath
+        peerKeys = @varStorage.keysForPrefix peerKey
+        if con.name then delete @peers[con.name]
+        @varStorage.removeKey key for key in peerKeys # this could be more efficient, but does it matter?
+        @connections.splice idx, 1
+        if msg then @error con, errorType, msg
+        con.send()
+        con.close()
+        delete @pendingRequests[num] for num in con.requests
+        if con is @master then @exit()
     # return false becuase this is called by messages, so a faulty message won't be forwarded
     false
   exit: -> console.log "No custom exit function"
@@ -276,7 +284,7 @@ exports.Server = class Server
     @verbose "PRIM SET LINKS, LINKS PATH: #{con.linksPath}, NEW #{JSON.stringify @varStorage.values[con.linksPath]}, OLD: #{JSON.stringify con.links}"
     old = {}
     old[l] = true for l of con.links
-    for l in @varStorage.values[con.linksPath]
+    for l in @varStorage.values[con.linksPath] ? []
       if !old[l]
         @addLink con, l
       else delete old[l]
@@ -343,6 +351,12 @@ exports.Server = class Server
       @handleStorageCommand con, cmd, ->
         con.addCmd cmd
         cont()
+  dump: (con, cmd, cont)->
+    if @diag
+      @handleStorageCommand con, cmd, (newCmd)->
+        con.addCmd newCmd
+        cont()
+    else @error con, error_bad_peer_request, "Diag mode not turned on"
   set: (con, cmd, cont)->
     [x, key, value, storageMode] = cmd
     if storageMode and storageModes.indexOf(storageMode) is -1 then @error con, error_bad_storage_mode, "#{storageMode} is not a valid storage mode"
@@ -426,13 +440,14 @@ exports.VarStorage = class VarStorage
     @addKey key, info || storage_memory
     value
   removeKey: (key)->
-    #console.log "REMOVING KEY: #{key}"
+    @verbose "REMOVING KEY: #{key}"
     delete @keyInfo[key]
     delete @values[key]
-    @sortKeys()
+    #@sortKeys()
+    newKeys = true
     idx = _.sortedIndex @keys, key
     if idx > -1
-      #console.log "REMOVING #{key} (#{@keys[idx]})"
+      @verbose "REMOVED #{key} (#{@keys[idx]})"
       @keys.splice idx, 1
   isObject: (key)-> typeof @values[key] == 'object'
   canSplice: (key)-> !@values[key] ||(@values[key].splice? && @values[key].length?)
@@ -446,6 +461,11 @@ exports.VarStorage = class VarStorage
     @addKey path, 'handler'
     obj
   # handler methods
+  dump: (con, cmd, cont)->
+    newCmd = ['value', '', null, true, 'keys', @keys]
+    for key in @keys
+      newCmd.push key, @values[key]
+    cont newCmd
   value: (cmd, errBlock, cont)->
     [x, path, cookie, tree] = cmd
     if tree
@@ -479,9 +499,6 @@ exports.VarStorage = class VarStorage
       storageMode = storageMode || @keyInfo[key] || storage_memory
       cmd[2] = value
       if storageMode isnt storage_transient
-        #if !oldInfo
-        #  @keys.push key
-        #  @newKeys = true
         cont(@setKey key, value, info)
   put: ([x, key, value, index], errBlock, cont)->
     if !@values[key] then @values[key] = {}
@@ -490,6 +507,7 @@ exports.VarStorage = class VarStorage
     else
       if value == null then delete @values[key][index] else @values[key][index] = value
       if _.isEmpty @values[key] then @removeKey key
+      if !@keyInfo[key] then @addKey key, storage_memory
       cont(value)
   splice: ([x, key, args...], errBlock, cont)->
     @verbose "SPLICING: #{JSON.stringify [x, key, args...]}"
@@ -499,6 +517,7 @@ exports.VarStorage = class VarStorage
     else
       if args[0] < 0 then args[0] = @values[key].length + args[0] + 1
       @values[key].splice args...
+      if !@keyInfo[key] then @addKey key, storage_memory
       cont @values[key]
   removeFirst: ([x, key, value], errBlock, cont)->
     if typeof @values[key] != 'object' or !(@values[key] instanceof Array)
