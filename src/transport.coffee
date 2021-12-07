@@ -32,13 +32,13 @@ exports.JSONCodec = JSONCodec =
     if typeof data != 'string' then data = data.toString()
     msgs = (con.saved + data).trim().split('\n')
     con.saved = if data[data.length - 1] is '\n' then '' else msgs.pop()
-    con.processBatch batch for batch in _.map msgs, (m)->
+    con.processBatch batch for batch in _.map(msgs, (m)->
       try
         con.verbose "PROCESSING BATCH: #{m}"
         JSON.parse(m)
       catch err
         con.addCmd ['error', "Could not parse message: #{m}"]
-        con.send()
+        con.send())
 
 ####
 #
@@ -97,8 +97,8 @@ exports.Connection = class Connection
   toString: -> "#{@constructor.name} [#{@.peerPath ? '??'}]"
 
 exports.SocketConnection = class SocketConnection extends Connection
-  constructor: (@master, @con, initialData)->
-    super @master, null, (initialData ? '').toString()
+  constructor: (master, @con, initialData)->
+    super master, null, (initialData ? '').toString()
     @con.on 'data', (data) => @verbose "#{@} data: '#{data}'"; @newData data
     @con.on 'end', (hadError)=> @verbose "#{@} disconnect"; @master.disconnect @
     @con.on 'close', (hadError)=> @verbose "#{@} disconnect"; @master.disconnect @
@@ -114,10 +114,9 @@ exports.SocketConnection = class SocketConnection extends Connection
       console.log "Error closing connection: #{err.stack}"
 
 exports.WebSocketConnection = class WebSocketConnection extends Connection
-  constructor: (@master, @con)->
-    @pending = []
-    super @master
+  constructor: (master, @con)-> super master
   setMaster: (@master)->
+    if !@pending then @pending = []
     if @master
       if @con.readyState == 1 then @sendPending()
       else @con.onopen = (evt)=> @sendPending()
@@ -147,8 +146,7 @@ exports.WebSocketConnection = class WebSocketConnection extends Connection
 deadComets = {}
 
 exports.CometConnection = class CometConnection extends Connection
-  constructor: (@master, @socket)->
-    super @master
+  constructor: (master, @socket)-> super master
   setMaster: (@master)->
     console.log "MASTER: #{@master}"
     @master.addConnection @
@@ -164,8 +162,8 @@ exports.CometConnection = class CometConnection extends Connection
     deadComets[@socket._uuid] = true
 
 exports.CometClientConnection = class CometClientConnection extends Connection
-  constructor: (@master, url)->
-    super @master
+  constructor: (master, url)->
+    super master
     @pending = []
     @socket = comet.connect(url
     ).on('connect', => @sendPending()
@@ -298,8 +296,9 @@ class ConnectionEndpoint # connected to an endpoint
 # proxy -> processBatch -> Xus
 #####
 class XusEndpoint extends Connection # connected to an endpoint
-  constructor: (@master, @proxy, @id)->
-    super @master, @proxy
+  constructor: (master, proxy, @id)->
+    super master, proxy
+    @proxy = proxy
     @verbose = @proxy.verbose
   newConnection: false
   basicClose: ->

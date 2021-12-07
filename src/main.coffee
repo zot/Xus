@@ -105,7 +105,7 @@ parseAddr = (addr)->
 
 exports.FdConnection = class FdConnection extends exports.Connection
   constructor: (@input, @output)->
-    super null, @null
+    super null, null
     @q = []
     @writing = false
   setMaster: (@master)->
