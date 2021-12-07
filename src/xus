@@ -1,0 +1,10 @@
+#!/bin/sh
+DIR=$(dirname $(realpath "$0"))
+#exec julia --handle-signals=no "$DIR/main.jl" "$@"
+#exec julia --project=$(dirname "$DIR") --optimize=0 "$DIR/main.jl" "$@"
+if [ "$1" = -r ]; then
+    shift
+    exec julia --project=$(dirname "$DIR") -e "using Revise; includet(\"$DIR/rmain.jl\")" "$@"
+else
+    exec julia --project=$(dirname "$DIR") "$DIR/main.jl" "$@"
+fi
